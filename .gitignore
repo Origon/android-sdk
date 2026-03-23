@@ -1,0 +1,21 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/captures
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.jar
+*.log
+/sdk/build/
+/sdk/.cxx/
+
+# Native shared libraries are build artifacts — only .gitkeep is tracked
+*.so
