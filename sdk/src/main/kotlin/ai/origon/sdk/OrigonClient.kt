@@ -15,7 +15,7 @@ class OrigonClient(config: ClientConfig) : AutoCloseable {
         handle = NativeBridge.nativeClientCreate(
             config.endpoint,
             config.token,
-            config.externalId
+            config.userId
         )
         if (handle == 0L) {
             throw OrigonException("Failed to create native client")

@@ -133,7 +133,7 @@ val (control, messages) = client.getSession(sessions.first().sessionId)
 
 ### Types
 
-- `ClientConfig` -- endpoint, token, externalId
+- `ClientConfig` -- endpoint, token, userId
 - `Channel` -- CHAT, VOICE
 - `Control` -- AGENT, HUMAN
 - `MessageRole` -- ASSISTANT, USER, SUPERVISOR, SYSTEM, TOOL

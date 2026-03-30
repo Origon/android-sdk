@@ -9,7 +9,7 @@ internal object NativeBridge {
     // ── Lifecycle ──
 
     @JvmStatic
-    external fun nativeClientCreate(endpoint: String, token: String?, externalId: String?): Long
+    external fun nativeClientCreate(endpoint: String, token: String?, userId: String?): Long
 
     @JvmStatic
     external fun nativeClientDestroy(handle: Long)

@@ -157,7 +157,7 @@ data class UploadProgress(
 data class ClientConfig(
     val endpoint: String,
     val token: String? = null,
-    val externalId: String? = null
+    val userId: String? = null
 )
 
 sealed class ClientEvent {
