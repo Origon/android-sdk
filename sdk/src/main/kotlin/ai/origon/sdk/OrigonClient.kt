@@ -12,13 +12,21 @@ class OrigonClient(config: ClientConfig) : AutoCloseable {
     private val closed = AtomicBoolean(false)
 
     init {
-        handle = NativeBridge.nativeClientCreate(
+        // [ok: Long, errorKind: Int, status: Int, code: String?, message: String?]
+        //   ok == 0 on failure. Never null; native layer always returns 5 slots.
+        val result = NativeBridge.nativeClientCreate(
             config.endpoint,
+            config.bundleId,
             config.token,
             config.userId
         )
+        handle = result[0] as Long
         if (handle == 0L) {
-            throw OrigonException("Failed to create native client")
+            val kind = result[1] as Int
+            val status = result[2] as Int
+            val code = result[3] as? String ?: ""
+            val message = result[4] as? String ?: ""
+            throw OrigonConnectException(ConnectError.fromNative(kind, status, code, message))
         }
     }
 
@@ -184,6 +192,67 @@ class OrigonClient(config: ClientConfig) : AutoCloseable {
         return NativeBridge.nativeGetAttachmentUrl(handle, mediaId)
             ?: throw OrigonException("Failed to get attachment URL: $mediaId")
     }
+
+    fun attachmentsAllowed(): Boolean {
+        ensureOpen()
+        return NativeBridge.nativeAttachmentsAllowed(handle) == 1
+    }
+
+    // ── Server config ──
+
+    /** Pre-populated first assistant message configured for the tenant. */
+    val startMessage: String
+        get() {
+            ensureOpen()
+            return NativeBridge.nativeGetStartMessage(handle) ?: ""
+        }
+
+    /** True when the tenant has chat enabled. */
+    val isChatEnabled: Boolean
+        get() {
+            ensureOpen()
+            return NativeBridge.nativeIsChatEnabled(handle) == 1
+        }
+
+    /** True when the tenant has voice calling enabled. */
+    val isCallEnabled: Boolean
+        get() {
+            ensureOpen()
+            return NativeBridge.nativeIsCallEnabled(handle) == 1
+        }
+
+    /** True when chat and call may share one session (Origon OS). */
+    val concurrentChannels: Boolean
+        get() {
+            ensureOpen()
+            return NativeBridge.nativeConcurrentChannels(handle) == 1
+        }
+
+    /** Per-attachment-type policy configured for the tenant. Returns
+     *  [AttachmentPolicy.DISABLED] if the native layer refuses. */
+    val attachmentPolicy: AttachmentPolicy
+        get() {
+            ensureOpen()
+            val raw = NativeBridge.nativeGetAttachmentPolicy(handle)
+                ?: return AttachmentPolicy.DISABLED
+            // Layout: [imgEn, imgSz, docEn, docSz, vidEn, vidSz, audEn, audSz]
+            return AttachmentPolicy(
+                images = AttachmentRule(raw[0] == 1, raw[1].toUInt()),
+                documents = AttachmentRule(raw[2] == 1, raw[3].toUInt()),
+                videos = AttachmentRule(raw[4] == 1, raw[5].toUInt()),
+                audio = AttachmentRule(raw[6] == 1, raw[7].toUInt()),
+            )
+        }
+
+    /** Full server config snapshot fetched at connect. */
+    val serverConfig: ServerConfig
+        get() = ServerConfig(
+            startMessage = startMessage,
+            concurrentChannels = concurrentChannels,
+            isChatEnabled = isChatEnabled,
+            isCallEnabled = isCallEnabled,
+            attachmentPolicy = attachmentPolicy,
+        )
 
     fun toggleMute(): Boolean {
         ensureOpen()

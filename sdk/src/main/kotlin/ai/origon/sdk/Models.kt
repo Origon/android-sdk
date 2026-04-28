@@ -156,6 +156,9 @@ data class UploadProgress(
 
 data class ClientConfig(
     val endpoint: String,
+    /** Android application id, e.g. `com.acme.android`. Required — the
+     *  server reads it on `GET /config` to pick the right tenant. */
+    val bundleId: String,
     val token: String? = null,
     val userId: String? = null
 )
@@ -171,4 +174,92 @@ sealed class ClientEvent {
     data class CallError(val error: String?) : ClientEvent()
 }
 
+// ── Server config ──
+
+/**
+ * Tenant configuration returned by `GET /config` at connect time.
+ * Exposed so consumers can gate UI on chat/call availability, render
+ * attachment limits, or read the start message.
+ */
+data class ServerConfig(
+    val startMessage: String,
+    val concurrentChannels: Boolean,
+    val isChatEnabled: Boolean,
+    val isCallEnabled: Boolean,
+    val attachmentPolicy: AttachmentPolicy
+)
+
+data class AttachmentPolicy(
+    val images: AttachmentRule,
+    val documents: AttachmentRule,
+    val videos: AttachmentRule,
+    val audio: AttachmentRule
+) {
+    companion object {
+        /** Fallback returned when the native layer refuses to hand back
+         *  the policy (e.g. null handle). All categories disabled. */
+        val DISABLED = AttachmentPolicy(
+            images = AttachmentRule(enabled = false, maxSize = 0u),
+            documents = AttachmentRule(enabled = false, maxSize = 0u),
+            videos = AttachmentRule(enabled = false, maxSize = 0u),
+            audio = AttachmentRule(enabled = false, maxSize = 0u),
+        )
+    }
+}
+
+data class AttachmentRule(
+    val enabled: Boolean,
+    /** Maximum allowed size in megabytes. */
+    val maxSize: UInt
+)
+
+// ── Errors ──
+
+/**
+ * Structured failure reason surfaced by [OrigonClient]'s constructor.
+ * The type lets the caller dispatch on `code` (e.g. `bundle_id_not_allowed`)
+ * rather than string-matching messages.
+ */
+sealed class ConnectError {
+    /** `field` names the missing input — `endpoint` or `bundle_id`. */
+    data class MissingField(val field: String) : ConnectError()
+    /** DNS/TLS/connect/timeout/body-decode failure. */
+    data class Transport(val message: String) : ConnectError()
+    /** 403 from the server; `code` is the machine-readable envelope code. */
+    data class Forbidden(val code: String, val message: String) : ConnectError()
+    /** Other non-2xx, non-5xx response with the envelope attached. */
+    data class Http(val status: Int, val code: String, val message: String) : ConnectError()
+    /** 5xx — treat as transient and let the user retry. */
+    data class ServerUnavailable(val status: Int) : ConnectError()
+    /** Unexpected native-layer failure. */
+    data class Unknown(val message: String) : ConnectError()
+
+    internal companion object {
+        // Mirror of `OrigonConnectErrorKind` in native_client.h.
+        private const val NONE = 0
+        private const val MISSING_FIELD = 1
+        private const val TRANSPORT = 2
+        private const val FORBIDDEN = 3
+        private const val HTTP = 4
+        private const val SERVER_UNAVAILABLE = 5
+        private const val UNKNOWN = 6
+
+        fun fromNative(kind: Int, status: Int, code: String, message: String): ConnectError =
+            when (kind) {
+                MISSING_FIELD -> MissingField(field = code.ifEmpty { "unknown" })
+                TRANSPORT -> Transport(message = message)
+                FORBIDDEN -> Forbidden(code = code, message = message)
+                HTTP -> Http(status = status, code = code, message = message)
+                SERVER_UNAVAILABLE -> ServerUnavailable(status = status)
+                NONE, UNKNOWN -> Unknown(message = message.ifEmpty { "client create failed" })
+                else -> Unknown(message = "unexpected error kind: $kind")
+            }
+    }
+}
+
 class OrigonException(message: String) : Exception(message)
+
+/** Thrown when `OrigonClient(config)` fails. Carries the structured
+ *  [ConnectError] so the host app can build a readable message. */
+class OrigonConnectException(val reason: ConnectError) :
+    Exception(reason.toString())

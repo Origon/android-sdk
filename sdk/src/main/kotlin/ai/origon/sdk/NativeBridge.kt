@@ -8,8 +8,27 @@ internal object NativeBridge {
 
     // ── Lifecycle ──
 
+    /**
+     * Creates a client and fetches `/config`.
+     *
+     * Returns an Object array with this fixed layout:
+     *   [0] handle: Long  (0 on failure, non-zero on success)
+     *   [1] errorKind: Int — see `OrigonConnectErrorKind` in native_client.h
+     *   [2] status: Int — HTTP status when applicable, else 0
+     *   [3] code: String? — envelope `code` or field name (nullable)
+     *   [4] message: String? — human-readable detail (nullable)
+     *
+     * On success slots [1..4] are (0, 0, null, null). The JNI layer
+     * always hands back 5 slots so the Kotlin side never needs to null-check
+     * the array itself.
+     */
     @JvmStatic
-    external fun nativeClientCreate(endpoint: String, token: String?, userId: String?): Long
+    external fun nativeClientCreate(
+        endpoint: String,
+        bundleId: String,
+        token: String?,
+        userId: String?
+    ): Array<Any?>
 
     @JvmStatic
     external fun nativeClientDestroy(handle: Long)
@@ -101,6 +120,32 @@ internal object NativeBridge {
 
     @JvmStatic
     external fun nativeGetAttachmentUrl(handle: Long, mediaId: String): String?
+
+    @JvmStatic
+    external fun nativeAttachmentsAllowed(handle: Long): Int
+
+    // ── Server config ──
+
+    @JvmStatic
+    external fun nativeGetStartMessage(handle: Long): String?
+
+    @JvmStatic
+    external fun nativeIsChatEnabled(handle: Long): Int
+
+    @JvmStatic
+    external fun nativeIsCallEnabled(handle: Long): Int
+
+    @JvmStatic
+    external fun nativeConcurrentChannels(handle: Long): Int
+
+    /**
+     * Attachment policy as a flat int array. Returns null on handle error.
+     * Layout: [imgEn, imgSz, docEn, docSz, vidEn, vidSz, audEn, audSz]
+     *   *En   — 0/1 enabled flag
+     *   *Sz   — max allowed size in MB
+     */
+    @JvmStatic
+    external fun nativeGetAttachmentPolicy(handle: Long): IntArray?
 
     // ── Voice ──
 
