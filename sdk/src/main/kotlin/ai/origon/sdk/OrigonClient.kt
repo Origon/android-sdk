@@ -1,337 +1,320 @@
 package ai.origon.sdk
 
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
+import ai.origon.sdk.bridge.SessionEvent
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
+/**
+ * The primary interface to the Origon platform on Android.
+ *
+ * Backed by `libsession.so` via [SessionBridge]. One instance owns one
+ * native handle and one tokio runtime; create at app start, call
+ * [close] (or use `use { }`) at app shutdown.
+ *
+ * All fallible methods throw [SessionException] with a structured
+ * `kind` / `statusCode` / `code` / `message`.
+ */
 class OrigonClient(config: ClientConfig) : AutoCloseable {
 
-    private var handle: Long = 0L
+    private val handle: Long = SessionBridge.initialize(
+        endpoint = config.endpoint,
+        bundleId = config.bundleId,
+        token = config.token,
+        userId = config.userId,
+        platform = config.platform.toBridge(),
+        attributesJson = config.attributes?.let { JSON.encodeToString(JsonObject.serializer(), it) },
+    )
     private val closed = AtomicBoolean(false)
 
     init {
-        // [ok: Long, errorKind: Int, status: Int, code: String?, message: String?]
-        //   ok == 0 on failure. Never null; native layer always returns 5 slots.
-        val result = NativeBridge.nativeClientCreate(
-            config.endpoint,
-            config.bundleId,
-            config.token,
-            config.userId
-        )
-        handle = result[0] as Long
+        // SessionBridge.initialize throws SessionException on failure;
+        // a zero handle without an exception would be a bridge bug.
         if (handle == 0L) {
-            val kind = result[1] as Int
-            val status = result[2] as Int
-            val code = result[3] as? String ?: ""
-            val message = result[4] as? String ?: ""
-            throw OrigonConnectException(ConnectError.fromNative(kind, status, code, message))
+            throw SessionException(
+                kind = SessionBridge.ERROR_OTHER,
+                statusCode = 0,
+                code = null,
+                message = "session bridge returned null handle",
+            )
         }
     }
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
-            NativeBridge.nativeClientDestroy(handle)
-            handle = 0L
+            SessionBridge.destroy(handle)
         }
     }
 
     private fun ensureOpen() {
-        if (closed.get()) throw OrigonException("Client has been closed")
-    }
-
-    fun pollEvent(): ClientEvent? {
-        ensureOpen()
-        val raw = NativeBridge.nativePollEventFull(handle) ?: return null
-
-        val eventType = raw[0] as Int
-        return when (eventType) {
-            0 -> null // ORIGON_EVENT_NONE
-            1 -> ClientEvent.MessageAdded(
-                message = parseMessage(raw[1] as Array<Any?>),
-                index = raw[2] as Int
+        if (closed.get()) {
+            throw SessionException(
+                kind = SessionBridge.ERROR_NOT_INITIALIZED,
+                statusCode = 0,
+                code = null,
+                message = "client has been closed",
             )
-            2 -> ClientEvent.MessageUpdated(
-                message = parseMessage(raw[1] as Array<Any?>),
-                index = raw[2] as Int
-            )
-            3 -> ClientEvent.SessionUpdated(
-                sessionId = raw[3] as String
-            )
-            4 -> ClientEvent.ControlUpdated(
-                control = Control.fromNative(raw[4] as Int)
-            )
-            5 -> {
-                @Suppress("UNCHECKED_CAST")
-                val toolCallsRaw = raw[5] as Array<Array<Any?>>
-                ClientEvent.ToolCalls(
-                    toolCalls = toolCallsRaw.map { parseToolCall(it) }
-                )
-            }
-            6 -> ClientEvent.Typing(
-                isTyping = (raw[6] as Int) != 0
-            )
-            7 -> ClientEvent.CallStatus(
-                status = raw[7] as String
-            )
-            8 -> ClientEvent.CallError(
-                error = raw[8] as? String
-            )
-            else -> null
         }
     }
 
-    fun startSession(options: StartSessionOptions): SessionInfo {
-        ensureOpen()
-        val result = NativeBridge.nativeStartSession(
-            handle,
-            options.channel.toNative(),
-            options.sessionId,
-            options.fetchSession
-        ) ?: throw OrigonException("Failed to start session")
-
-        return parseSessionInfo(result)
-    }
-
-    fun getSessions(): List<SessionSummary> {
-        ensureOpen()
-        val result = NativeBridge.nativeGetSessions(handle)
-            ?: throw OrigonException("Failed to get sessions")
-
-        return result.map { parseSessionSummary(it) }
-    }
-
-    fun getSession(sessionId: String): Pair<Control, List<Message>> {
-        ensureOpen()
-        val result = NativeBridge.nativeGetSession(handle, sessionId)
-            ?: throw OrigonException("Failed to get session: $sessionId")
-
-        val control = Control.fromNative(result[0] as Int)
-        @Suppress("UNCHECKED_CAST")
-        val messagesRaw = result[1] as Array<Array<Any?>>
-        val messages = messagesRaw.map { parseMessage(it) }
-        return Pair(control, messages)
-    }
-
-    fun endSession() {
-        ensureOpen()
-        val rc = NativeBridge.nativeEndSession(handle)
-        if (rc != 0) throw OrigonException("Failed to end session")
-    }
-
-    fun sendMessage(payload: SendMessagePayload): String {
-        ensureOpen()
-        val attachmentMediaIds = payload.attachments.map { it.mediaId }.toTypedArray()
-        val attachmentUrls = payload.attachments.map { it.url }.toTypedArray()
-        val metaKeys = payload.meta.keys.toTypedArray()
-        val metaValues = payload.meta.values.toTypedArray()
-        val results = if (payload.results.isNotEmpty()) payload.results.toTypedArray() else null
-
-        val sessionId = NativeBridge.nativeSendMessage(
-            handle,
-            payload.text,
-            payload.html,
-            payload.context,
-            if (attachmentMediaIds.isNotEmpty()) attachmentMediaIds else null,
-            if (attachmentUrls.isNotEmpty()) attachmentUrls else null,
-            payload.type,
-            results,
-            if (metaKeys.isNotEmpty()) metaKeys else null,
-            if (metaValues.isNotEmpty()) metaValues else null
-        ) ?: throw OrigonException("Failed to send message")
-
-        return sessionId
-    }
-
-    fun uploadAttachment(data: ByteArray, filename: String): Pair<AttachmentInfo, Flow<UploadProgress>> {
-        ensureOpen()
-        val result = NativeBridge.nativeUploadAttachment(handle, data, filename)
-            ?: throw OrigonException("Failed to upload attachment")
-
-        val mediaId = result[0] as String
-        val url = result[1] as String
-        val progressHandle = result[2] as Long
-
-        val attachmentInfo = AttachmentInfo(mediaId = mediaId, url = url)
-
-        val progressFlow: Flow<UploadProgress> = callbackFlow {
-            try {
-                while (true) {
-                    val progress = NativeBridge.nativeProgressPoll(progressHandle)
-                    if (progress == null) {
-                        break
-                    }
-                    val uploadProgress = UploadProgress(
-                        percent = progress[0],
-                        loaded = progress[1].toLong(),
-                        total = progress[2].toLong()
-                    )
-                    trySend(uploadProgress)
-                    if (uploadProgress.percent >= 100.0) break
-                    delay(50)
-                }
-            } finally {
-                NativeBridge.nativeProgressFree(progressHandle)
-            }
-            close()
-            awaitClose()
-        }
-
-        return Pair(attachmentInfo, progressFlow)
-    }
-
-    fun deleteAttachment(mediaId: String) {
-        ensureOpen()
-        val rc = NativeBridge.nativeDeleteAttachment(handle, mediaId)
-        if (rc != 0) throw OrigonException("Failed to delete attachment: $mediaId")
-    }
-
-    fun getAttachmentUrl(mediaId: String): String {
-        ensureOpen()
-        return NativeBridge.nativeGetAttachmentUrl(handle, mediaId)
-            ?: throw OrigonException("Failed to get attachment URL: $mediaId")
-    }
-
-    fun attachmentsAllowed(): Boolean {
-        ensureOpen()
-        return NativeBridge.nativeAttachmentsAllowed(handle) == 1
-    }
-
-    // ── Server config ──
+    // ── Cached /config getters ───────────────────────────────────────
 
     /** Pre-populated first assistant message configured for the tenant. */
     val startMessage: String
         get() {
             ensureOpen()
-            return NativeBridge.nativeGetStartMessage(handle) ?: ""
+            return SessionBridge.getStartMessage(handle)
         }
 
-    /** True when the tenant has chat enabled. */
     val isChatEnabled: Boolean
         get() {
             ensureOpen()
-            return NativeBridge.nativeIsChatEnabled(handle) == 1
+            return SessionBridge.isChatEnabled(handle)
         }
 
-    /** True when the tenant has voice calling enabled. */
     val isCallEnabled: Boolean
         get() {
             ensureOpen()
-            return NativeBridge.nativeIsCallEnabled(handle) == 1
+            return SessionBridge.isCallEnabled(handle)
         }
 
-    /** True when chat and call may share one session (Origon OS). */
-    val concurrentChannels: Boolean
+    /** True when chat and voice may share one session. */
+    val multipleChannels: Boolean
         get() {
             ensureOpen()
-            return NativeBridge.nativeConcurrentChannels(handle) == 1
+            return SessionBridge.isMultipleChannelsAllowed(handle)
         }
 
-    /** Per-attachment-type policy configured for the tenant. Returns
-     *  [AttachmentPolicy.DISABLED] if the native layer refuses. */
     val attachmentPolicy: AttachmentPolicy
         get() {
             ensureOpen()
-            val raw = NativeBridge.nativeGetAttachmentPolicy(handle)
-                ?: return AttachmentPolicy.DISABLED
-            // Layout: [imgEn, imgSz, docEn, docSz, vidEn, vidSz, audEn, audSz]
+            val raw = SessionBridge.getAttachmentPolicy(handle)
             return AttachmentPolicy(
-                images = AttachmentRule(raw[0] == 1, raw[1].toUInt()),
-                documents = AttachmentRule(raw[2] == 1, raw[3].toUInt()),
-                videos = AttachmentRule(raw[4] == 1, raw[5].toUInt()),
-                audio = AttachmentRule(raw[6] == 1, raw[7].toUInt()),
+                images = AttachmentRule(raw.images.enabled, raw.images.maxSize),
+                documents = AttachmentRule(raw.documents.enabled, raw.documents.maxSize),
+                videos = AttachmentRule(raw.videos.enabled, raw.videos.maxSize),
+                audio = AttachmentRule(raw.audio.enabled, raw.audio.maxSize),
             )
         }
 
-    /** Full server config snapshot fetched at connect. */
     val serverConfig: ServerConfig
         get() = ServerConfig(
             startMessage = startMessage,
-            concurrentChannels = concurrentChannels,
+            multipleChannels = multipleChannels,
             isChatEnabled = isChatEnabled,
             isCallEnabled = isCallEnabled,
             attachmentPolicy = attachmentPolicy,
         )
 
-    fun toggleMute(): Boolean {
+    /**
+     * Replace session-level attributes injected as `data.attributes` on
+     * subsequent [startSession] calls. Pass null to clear.
+     */
+    fun setAttributes(attributes: JsonObject?) {
         ensureOpen()
-        val result = NativeBridge.nativeToggleMute(handle)
-        if (result < 0) throw OrigonException("Failed to toggle mute")
-        return result == 1
+        val json = attributes?.let { JSON.encodeToString(JsonObject.serializer(), it) }
+        SessionBridge.setAttributes(handle, json)
     }
 
-    // ── Internal parsers ──
+    // ── Session history ──────────────────────────────────────────────
 
-    private fun parseMessage(raw: Array<Any?>): Message {
-        return Message(
-            role = MessageRole.fromNative(raw[0] as Int),
-            text = raw[1] as? String,
-            html = raw[2] as? String,
-            timestamp = raw[3] as? String,
-            loading = (raw[4] as Int) != 0,
-            done = (raw[5] as Int) != 0,
-            errorText = raw[6] as? String,
-            attachments = parseAttachments(raw[7]),
-            toolCalls = parseToolCalls(raw[8]),
-            toolCallId = raw[9] as? String,
-            toolName = raw[10] as? String,
-            meta = parseMeta(raw[11])
+    /** `GET /sessions` — prior sessions for the configured `userId`. */
+    fun getSessions(): List<SessionSummary> {
+        ensureOpen()
+        val body = SessionBridge.getSessions(handle)
+        return try {
+            JSON.decodeFromString(body)
+        } catch (e: Throwable) {
+            throw SessionException(
+                kind = SessionBridge.ERROR_OTHER,
+                statusCode = 0,
+                code = null,
+                message = "decode getSessions: ${e.message}",
+            )
+        }
+    }
+
+    /** `GET /session/<id>` — history for one session. */
+    fun getSession(id: String): SessionHistory {
+        ensureOpen()
+        val body = SessionBridge.getSession(handle, id)
+        return try {
+            JSON.decodeFromString(body)
+        } catch (e: Throwable) {
+            throw SessionException(
+                kind = SessionBridge.ERROR_OTHER,
+                statusCode = 0,
+                code = null,
+                message = "decode getSession: ${e.message}",
+            )
+        }
+    }
+
+    // ── Session lifecycle ────────────────────────────────────────────
+
+    fun startSession(options: StartSessionOptions): StartSessionResponse {
+        ensureOpen()
+        val raw = SessionBridge.startSession(
+            handle = handle,
+            channel = options.channel.toBridge(),
+            sessionId = options.sessionId,
+            dataJson = options.data,
+        )
+        return StartSessionResponse(
+            sessionId = raw.sessionId,
+            url = raw.url,
+            token = raw.token,
         )
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun parseAttachments(raw: Any?): List<AttachmentInfo> {
-        if (raw == null) return emptyList()
-        val arr = raw as Array<Array<Any?>>
-        return arr.map { AttachmentInfo(mediaId = it[0] as String, url = it[1] as String) }
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun parseToolCalls(raw: Any?): List<ToolCall> {
-        if (raw == null) return emptyList()
-        val arr = raw as Array<Array<Any?>>
-        return arr.map { parseToolCall(it) }
-    }
-
-    private fun parseToolCall(raw: Array<Any?>): ToolCall {
-        return ToolCall(
-            toolCallId = raw[0] as String,
-            toolName = raw[1] as String,
-            arguments = raw[2] as ByteArray
+    /**
+     * Attach to a session whose [StartSessionResponse] was obtained out
+     * of band (multi-device handoff, deeplink, persisted session).
+     */
+    fun joinSession(input: JoinSessionInput) {
+        ensureOpen()
+        SessionBridge.joinSession(
+            handle = handle,
+            channel = input.channel.toBridge(),
+            sessionId = input.sessionId,
+            url = input.url,
+            token = input.token,
         )
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun parseMeta(raw: Any?): Map<String, String>? {
-        if (raw == null) return null
-        val arr = raw as Array<Array<Any?>>
-        return arr.associate { (it[0] as String) to (it[1] as String) }
+    fun endSession(id: String) {
+        ensureOpen()
+        SessionBridge.endSession(handle, id)
     }
 
-    private fun parseSessionInfo(raw: Array<Any?>): SessionInfo {
-        @Suppress("UNCHECKED_CAST")
-        val messagesRaw = raw[1] as Array<Array<Any?>>
-        @Suppress("UNCHECKED_CAST")
-        val configDataRaw = raw[3] as? Array<Array<Any?>>
-
-        return SessionInfo(
-            sessionId = raw[0] as String,
-            messages = messagesRaw.map { parseMessage(it) },
-            control = Control.fromNative(raw[2] as Int),
-            configData = configDataRaw?.associate { (it[0] as String) to (it[1] as String) } ?: emptyMap(),
-            active = (raw[4] as Int) != 0
-        )
+    fun endAllSessions() {
+        ensureOpen()
+        SessionBridge.endAllSessions(handle)
     }
 
-    private fun parseSessionSummary(raw: Array<Any?>): SessionSummary {
-        @Suppress("UNCHECKED_CAST")
-        return SessionSummary(
-            sessionId = raw[0] as String,
-            channel = Channel.fromNative(raw[1] as Int),
-            createdAt = raw[2] as String,
-            updatedAt = raw[3] as String,
-            lastMessage = parseMessage(raw[4] as Array<Any?>)
-        )
+    /** Snapshot of every active session. */
+    fun activeSessions(): List<ActiveSession> {
+        ensureOpen()
+        val raw = SessionBridge.activeSessionIds(handle)
+        return raw.map { row ->
+            ActiveSession(sessionId = row[0], channel = Channel.fromWire(row[1]))
+        }
+    }
+
+    // ── Voice controls ───────────────────────────────────────────────
+
+    fun setMute(id: String, muted: Boolean) {
+        ensureOpen()
+        SessionBridge.setMute(handle, id, muted)
+    }
+
+    fun setMuteAll(muted: Boolean) {
+        ensureOpen()
+        SessionBridge.setMuteAll(handle, muted)
+    }
+
+    /** Returns the new hold state. */
+    fun toggleHold(id: String): Boolean {
+        ensureOpen()
+        return SessionBridge.toggleHold(handle, id)
+    }
+
+    /** `digit` must be one of `0-9`, `*`, `#`, `A-D` per RFC 4733. */
+    fun sendDtmf(id: String, digit: Char, durationMs: Int) {
+        ensureOpen()
+        SessionBridge.sendDtmf(handle, id, digit, durationMs)
+    }
+
+    // ── Events ───────────────────────────────────────────────────────
+
+    /**
+     * Polls the next event. Returns null when the queue is idle.
+     *
+     * Loops internally to skip chat-side events (`MessageAdded`,
+     * `MessageUpdated`, `ToolCalls`) that are not yet surfaced — a null
+     * return means "queue empty", not "next event was a chat event".
+     */
+    fun pollEvent(): ClientEvent? {
+        ensureOpen()
+        while (true) {
+            val raw = SessionBridge.pollEvent(handle) ?: return null
+            val mapped = mapEvent(raw)
+            if (mapped != null) return mapped
+            // Chat-side event we don't surface yet — drain and try next.
+        }
+    }
+
+    private fun mapEvent(raw: SessionEvent): ClientEvent? {
+        val sid = raw.sessionId ?: return null
+        return when (raw.kind) {
+            SessionBridge.EVENT_MESSAGE_ADDED,
+            SessionBridge.EVENT_MESSAGE_UPDATED,
+            SessionBridge.EVENT_TOOL_CALLS -> null
+
+            SessionBridge.EVENT_SESSION_UPDATED ->
+                ClientEvent.SessionUpdated(sid, raw.newSessionId.orEmpty())
+
+            SessionBridge.EVENT_CONTROL_UPDATED ->
+                ClientEvent.ControlUpdated(sid, Control.fromBridge(raw.control))
+
+            SessionBridge.EVENT_TYPING ->
+                ClientEvent.Typing(sid, raw.typing)
+
+            SessionBridge.EVENT_CONNECTED ->
+                ClientEvent.Connected(sid)
+
+            SessionBridge.EVENT_RECONNECTING ->
+                ClientEvent.Reconnecting(
+                    sessionId = sid,
+                    attempt = raw.reconnectAttempt,
+                    reason = DisconnectReason.fromBridge(
+                        raw.disconnectReasonKind,
+                        raw.disconnectReasonServerCode,
+                        raw.disconnectReasonServerDetail,
+                    ),
+                )
+
+            SessionBridge.EVENT_RECONNECTED ->
+                ClientEvent.Reconnected(sid)
+
+            SessionBridge.EVENT_PEER_ATTACHED ->
+                ClientEvent.PeerAttached(sid, raw.peerEndpointId.orEmpty(), raw.peerAlias)
+
+            SessionBridge.EVENT_PEER_DETACHED ->
+                ClientEvent.PeerDetached(sid, raw.peerEndpointId.orEmpty(), raw.peerAlias)
+
+            SessionBridge.EVENT_DISCONNECTED ->
+                ClientEvent.Disconnected(
+                    sessionId = sid,
+                    reason = DisconnectReason.fromBridge(
+                        raw.disconnectReasonKind,
+                        raw.disconnectReasonServerCode,
+                        raw.disconnectReasonServerDetail,
+                    ),
+                )
+
+            SessionBridge.EVENT_CALL_ERROR ->
+                ClientEvent.CallError(
+                    sessionId = sid,
+                    message = if (raw.callErrorPresent) raw.callErrorMessage else null,
+                )
+
+            else -> null
+        }
+    }
+
+    companion object {
+        /**
+         * Install the global tracing subscriber. Idempotent — only the
+         * first call installs; subsequent calls are no-ops.
+         *
+         * `filter` accepts `RUST_LOG`-style directives. Pass null for
+         * the SDK default.
+         */
+        fun initLogging(filter: String? = null) {
+            SessionBridge.initLogging(filter)
+        }
+
+        private val JSON = Json { ignoreUnknownKeys = true }
     }
 }

@@ -1,27 +1,36 @@
-# Keep all public SDK classes
+# Public SDK surface
 -keep class ai.origon.sdk.OrigonClient { *; }
--keep class ai.origon.sdk.OrigonException { *; }
+-keep class ai.origon.sdk.OrigonClient$* { *; }
+-keep class ai.origon.sdk.SessionException { *; }
 
-# Keep all model classes (data classes, enums, sealed classes)
+# Public model classes (data classes / enums / sealed classes)
 -keep class ai.origon.sdk.Channel { *; }
+-keep class ai.origon.sdk.Channel$* { *; }
 -keep class ai.origon.sdk.Control { *; }
--keep class ai.origon.sdk.MessageRole { *; }
--keep class ai.origon.sdk.Message { *; }
--keep class ai.origon.sdk.SessionInfo { *; }
--keep class ai.origon.sdk.SessionSummary { *; }
--keep class ai.origon.sdk.StartSessionOptions { *; }
--keep class ai.origon.sdk.SendMessagePayload { *; }
--keep class ai.origon.sdk.ToolCall { *; }
--keep class ai.origon.sdk.AttachmentInfo { *; }
--keep class ai.origon.sdk.UploadProgress { *; }
+-keep class ai.origon.sdk.Control$* { *; }
+-keep class ai.origon.sdk.Platform { *; }
+-keep class ai.origon.sdk.Platform$* { *; }
 -keep class ai.origon.sdk.ClientConfig { *; }
+-keep class ai.origon.sdk.StartSessionOptions { *; }
+-keep class ai.origon.sdk.StartSessionResponse { *; }
+-keep class ai.origon.sdk.JoinSessionInput { *; }
+-keep class ai.origon.sdk.ActiveSession { *; }
+-keep class ai.origon.sdk.AttachmentRule { *; }
+-keep class ai.origon.sdk.AttachmentPolicy { *; }
+-keep class ai.origon.sdk.AttachmentPolicy$* { *; }
+-keep class ai.origon.sdk.ServerConfig { *; }
+-keep class ai.origon.sdk.DisconnectReason { *; }
+-keep class ai.origon.sdk.DisconnectReason$* { *; }
 -keep class ai.origon.sdk.ClientEvent { *; }
 -keep class ai.origon.sdk.ClientEvent$* { *; }
 
-# Keep JNI bridge (internal but must not be stripped)
--keep class ai.origon.sdk.NativeBridge { *; }
+# JNI bridge — Rust side resolves these classes / fields by name, so
+# they must not be renamed or have members stripped.
+-keep class ai.origon.sdk.SessionBridge { *; }
+-keep class ai.origon.sdk.bridge.** { *; }
+-keepclassmembers class ai.origon.sdk.bridge.** { *; }
 
-# Keep native methods
+# Keep all native methods.
 -keepclasseswithmembernames class * {
     native <methods>;
 }

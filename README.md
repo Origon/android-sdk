@@ -1,6 +1,7 @@
 # Origon Android SDK
 
-Android SDK for the Origon platform.
+Android SDK for the Origon platform — voice calling over MOQ, plus
+session management.
 
 ## Requirements
 
@@ -36,7 +37,7 @@ In your app's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("ai.origon:sdk:0.1.0")
+    implementation("ai.origon:sdk:0.2.0")
 }
 ```
 
@@ -45,71 +46,61 @@ dependencies {
 ```kotlin
 import ai.origon.sdk.*
 
-// Initialize the client
+// Optional: install Rust-side logging once at app launch.
+OrigonClient.initLogging()
+
+// Create the client.
 val client = OrigonClient(
     ClientConfig(
         endpoint = "https://api.origon.ai",
-        token = "your-auth-token"
+        bundleId = "com.acme.android",
+        token = "your-auth-token",
     )
 )
 
-// Start a chat session
-val session = client.startSession(
-    StartSessionOptions(channel = Channel.CHAT)
-)
+// Start a voice session.
+val response = client.startSession(StartSessionOptions(channel = Channel.VOICE))
+println("session ${response.sessionId} dialing ${response.url}")
 
-// Send a message
-val sessionId = client.sendMessage(
-    SendMessagePayload(text = "Hello from Android!")
-)
-
-// Poll for events
-val event = client.pollEvent()
-when (event) {
-    is ClientEvent.MessageAdded -> println("New: ${event.message.text}")
-    is ClientEvent.Typing -> println("Typing: ${event.isTyping}")
-    else -> {}
+// Drain the event stream.
+while (true) {
+    when (val event = client.pollEvent()) {
+        is ClientEvent.Connected -> println("connected")
+        is ClientEvent.PeerAttached -> println("peer ${event.peerEndpointId}")
+        is ClientEvent.Disconnected -> { println("disconnected: ${event.reason}"); break }
+        null -> Thread.sleep(50)
+        else -> {}
+    }
 }
 
-// Clean up
 client.close()
 ```
 
-### Voice Sessions
+### Voice controls
 
 ```kotlin
-val session = client.startSession(
-    StartSessionOptions(channel = Channel.VOICE)
-)
-
-val isMuted = client.toggleMute()
+client.setMute(id = response.sessionId, muted = true)
+val onHold = client.toggleHold(id = response.sessionId)
+client.sendDtmf(id = response.sessionId, digit = '5', durationMs = 100)
 ```
 
-### Attachments
+### Multiple sessions
 
 ```kotlin
-import kotlinx.coroutines.flow.collect
-
-val (attachment, progressFlow) = client.uploadAttachment(
-    data = fileBytes,
-    filename = "photo.jpg"
-)
-
-progressFlow.collect { progress ->
-    println("Upload: ${progress.percent}%")
-}
-
-client.sendMessage(
-    SendMessagePayload(text = "See attached", attachments = listOf(attachment))
-)
+val active: List<ActiveSession> = client.activeSessions()
+client.setMuteAll(muted = true)
+client.endAllSessions()
 ```
 
-### Retrieve Past Sessions
+### Joining a pre-obtained session
 
 ```kotlin
-val sessions = client.getSessions()
-
-val (control, messages) = client.getSession(sessions.first().sessionId)
+client.joinSession(JoinSessionInput(
+    channel = Channel.VOICE,
+    sessionId = "...",
+    url = "...",
+    token = "...",
+))
 ```
 
 ## API Reference
@@ -118,34 +109,41 @@ val (control, messages) = client.getSession(sessions.first().sessionId)
 
 | Method | Description |
 |---|---|
-| `OrigonClient(config)` | Create a new client instance |
-| `close()` | Destroy the client and free resources |
-| `pollEvent()` | Poll for the next event (non-blocking) |
-| `startSession(options)` | Start or resume a session |
-| `getSessions()` | List all sessions |
-| `getSession(sessionId)` | Get session details |
-| `endSession()` | End the current session |
-| `sendMessage(payload)` | Send a message, returns session ID |
-| `uploadAttachment(data, filename)` | Upload a file, returns info and progress flow |
-| `deleteAttachment(mediaId)` | Delete an uploaded attachment |
-| `getAttachmentUrl(mediaId)` | Get the URL for an attachment |
-| `toggleMute()` | Toggle microphone mute, returns new state |
+| `OrigonClient(config)` | Create a new client. Throws `SessionException` on connect failure. |
+| `close()` | Release the native handle. |
+| `pollEvent()` | Non-blocking poll. Returns `null` when idle. |
+| `startSession(options)` | Open a session. Returns `(sessionId, url, token)`. |
+| `joinSession(input)` | Attach to a previously-obtained `StartSessionResponse`. |
+| `endSession(id)` / `endAllSessions()` | Close a single / every session. |
+| `setMute(id, muted)` / `setMuteAll(muted)` | Voice — absolute mute. |
+| `toggleHold(id)` | Voice — toggle hold. Returns the new state. |
+| `sendDtmf(id, digit, durationMs)` | Voice — send a DTMF digit per RFC 4733. |
+| `activeSessions()` | Snapshot of every active session. |
+| `getSessions()` | `GET /sessions` — list prior sessions for the configured `userId`. |
+| `getSession(id)` | `GET /session/<id>` — transcript for one session. |
+| `setAttributes(attributes)` | Replace session-level attributes injected as `data.attributes` on `startSession`. |
+| `startMessage` / `isChatEnabled` / `isCallEnabled` / `multipleChannels` / `attachmentPolicy` | Cached `/config` getters. |
+| `OrigonClient.initLogging(filter)` | Install Rust-side `tracing` subscriber. |
 
 ### Types
 
-- `ClientConfig` -- endpoint, token, userId
-- `Channel` -- CHAT, VOICE
-- `Control` -- AGENT, HUMAN
-- `MessageRole` -- ASSISTANT, USER, SUPERVISOR, SYSTEM, TOOL
-- `Message` -- chat message with role, text, html, attachments, tool calls, meta
-- `SessionInfo` -- full session state
-- `SessionSummary` -- session list entry
-- `StartSessionOptions` -- channel, optional sessionId, fetchSession flag
-- `SendMessagePayload` -- text, html, context, attachments, type, results, meta
-- `AttachmentInfo` -- mediaId, url
-- `UploadProgress` -- percent, loaded, total
-- `ToolCall` -- toolCallId, toolName, arguments
-- `ClientEvent` -- sealed class with variants for each event type
+- `ClientConfig` — endpoint, bundleId, token, userId, platform, attributes (`JsonObject?`).
+- `Channel` — `CHAT`, `VOICE`.
+- `Control` — `AGENT`, `HUMAN`.
+- `Platform` — `MOBILE`, `WEB`, `NONE`.
+- `StartSessionOptions` — channel, optional sessionId, optional `data` (raw JSON).
+- `StartSessionResponse` — sessionId, url, token.
+- `JoinSessionInput` — channel, sessionId, url, token.
+- `ActiveSession` — sessionId, channel.
+- `AttachmentRule` / `AttachmentPolicy` — tenant policy for attachments.
+- `ServerConfig` — full `/config` snapshot (start message, capability flags, attachment policy).
+- `DisconnectReason` — sealed class of structured reasons.
+- `ClientEvent` — sealed class: `Connected`, `Reconnecting`, `Reconnected`, `PeerAttached`, `PeerDetached`, `Disconnected`, `CallError`, `ControlUpdated`, `Typing`, `SessionUpdated`. Every variant carries `sessionId`.
+- `Message`, `Contact`, `SessionSummary`, `SessionHistory` — typed shapes returned by `getSessions()` / `getSession(id)`.
+
+Chat-side messaging and attachments (`send_message`,
+`upload_attachment`, etc.) will be added when the underlying chat
+plane lands in the session crate.
 
 ## License
 

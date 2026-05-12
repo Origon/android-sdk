@@ -1,18 +1,44 @@
 package ai.origon.sdk
 
-enum class Channel {
-    CHAT,
-    VOICE;
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
-    internal companion object {
-        fun fromNative(value: Int): Channel = when (value) {
-            0 -> CHAT
-            1 -> VOICE
-            else -> throw OrigonException("Unknown channel value: $value")
-        }
+// ── Enums ────────────────────────────────────────────────────────────
+
+@Serializable
+enum class Channel {
+    @SerialName("chat") CHAT,
+    @SerialName("voice") VOICE;
+
+    internal fun toBridge(): Int = when (this) {
+        CHAT -> SessionBridge.CHANNEL_CHAT
+        VOICE -> SessionBridge.CHANNEL_VOICE
     }
 
-    internal fun toNative(): Int = ordinal
+    internal companion object {
+        fun fromBridge(value: Int): Channel = when (value) {
+            SessionBridge.CHANNEL_CHAT -> CHAT
+            SessionBridge.CHANNEL_VOICE -> VOICE
+            else -> throw SessionException(
+                kind = SessionBridge.ERROR_OTHER,
+                statusCode = 0,
+                code = null,
+                message = "unknown channel discriminant: $value",
+            )
+        }
+
+        fun fromWire(s: String): Channel = when (s) {
+            "voice" -> VOICE
+            "chat" -> CHAT
+            else -> throw SessionException(
+                kind = SessionBridge.ERROR_OTHER,
+                statusCode = 0,
+                code = null,
+                message = "unknown channel: $s",
+            )
+        }
+    }
 }
 
 enum class Control {
@@ -20,246 +46,245 @@ enum class Control {
     HUMAN;
 
     internal companion object {
-        fun fromNative(value: Int): Control = when (value) {
-            0 -> AGENT
-            1 -> HUMAN
-            else -> throw OrigonException("Unknown control value: $value")
+        fun fromBridge(value: Int): Control = when (value) {
+            SessionBridge.CONTROL_HUMAN -> HUMAN
+            else -> AGENT
         }
     }
-
-    internal fun toNative(): Int = ordinal
 }
 
-enum class MessageRole {
-    ASSISTANT,
-    USER,
-    SUPERVISOR,
-    SYSTEM,
-    TOOL;
+enum class Platform {
+    NONE,
+    MOBILE,
+    WEB;
 
-    internal companion object {
-        fun fromNative(value: Int): MessageRole = when (value) {
-            0 -> ASSISTANT
-            1 -> USER
-            2 -> SUPERVISOR
-            3 -> SYSTEM
-            4 -> TOOL
-            else -> throw OrigonException("Unknown message role value: $value")
-        }
-    }
-
-    internal fun toNative(): Int = ordinal
-}
-
-data class AttachmentInfo(
-    val mediaId: String,
-    val url: String
-)
-
-data class ToolCall(
-    val toolCallId: String,
-    val toolName: String,
-    val arguments: ByteArray
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is ToolCall) return false
-        return toolCallId == other.toolCallId &&
-            toolName == other.toolName &&
-            arguments.contentEquals(other.arguments)
-    }
-
-    override fun hashCode(): Int {
-        var result = toolCallId.hashCode()
-        result = 31 * result + toolName.hashCode()
-        result = 31 * result + arguments.contentHashCode()
-        return result
+    internal fun toBridge(): Int = when (this) {
+        NONE -> SessionBridge.PLATFORM_NONE
+        MOBILE -> SessionBridge.PLATFORM_MOBILE
+        WEB -> SessionBridge.PLATFORM_WEB
     }
 }
 
-data class Message(
-    val role: MessageRole,
-    val text: String?,
-    val html: String?,
-    val timestamp: String?,
-    val loading: Boolean,
-    val done: Boolean,
-    val errorText: String?,
-    val attachments: List<AttachmentInfo>,
-    val toolCalls: List<ToolCall>,
-    val toolCallId: String?,
-    val toolName: String?,
-    val meta: Map<String, String>?
-)
+// ── Configuration / requests ─────────────────────────────────────────
 
-data class SessionInfo(
-    val sessionId: String,
-    val messages: List<Message>,
-    val control: Control,
-    val configData: Map<String, String>,
-    val active: Boolean
-)
-
-data class SessionSummary(
-    val sessionId: String,
-    val channel: Channel,
-    val createdAt: String,
-    val updatedAt: String,
-    val lastMessage: Message
+data class ClientConfig(
+    val endpoint: String,
+    /** Android application id. When set, sent as `X-Bundle-Id` on every HTTPS call. */
+    val bundleId: String? = null,
+    val token: String? = null,
+    val userId: String? = null,
+    val platform: Platform = Platform.MOBILE,
+    /**
+     * Initial session-level attributes. Injected as `data.attributes`
+     * on `POST /session/start`. Encoded to a JSON string via
+     * `kotlinx.serialization` before crossing the native boundary.
+     */
+    val attributes: JsonObject? = null,
 )
 
 data class StartSessionOptions(
     val channel: Channel,
+    /** Existing session id to resume; null for a new session. */
     val sessionId: String? = null,
-    val fetchSession: Boolean = false
+    /** Optional consumer-defined raw JSON forwarded as `data` on the wire. */
+    val data: String? = null,
 )
 
-data class SendMessagePayload(
-    val text: String? = null,
-    val html: String? = null,
-    val context: ByteArray? = null,
-    val attachments: List<AttachmentInfo> = emptyList(),
-    val type: String? = null,
-    val results: List<ByteArray> = emptyList(),
-    val meta: Map<String, String> = emptyMap()
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is SendMessagePayload) return false
-        return text == other.text &&
-            html == other.html &&
-            (context contentEquals other.context) &&
-            attachments == other.attachments &&
-            type == other.type &&
-            results.size == other.results.size &&
-            results.zip(other.results).all { (a, b) -> a.contentEquals(b) } &&
-            meta == other.meta
-    }
-
-    override fun hashCode(): Int {
-        var result = text?.hashCode() ?: 0
-        result = 31 * result + (html?.hashCode() ?: 0)
-        result = 31 * result + (context?.contentHashCode() ?: 0)
-        result = 31 * result + attachments.hashCode()
-        result = 31 * result + (type?.hashCode() ?: 0)
-        result = 31 * result + results.sumOf { it.contentHashCode() }
-        result = 31 * result + meta.hashCode()
-        return result
-    }
-}
-
-data class UploadProgress(
-    val percent: Double,
-    val loaded: Long,
-    val total: Long
+data class StartSessionResponse(
+    val sessionId: String,
+    val url: String,
+    /** Per-session auth token, scoped to this session only. */
+    val token: String,
 )
 
-data class ClientConfig(
-    val endpoint: String,
-    /** Android application id, e.g. `com.acme.android`. Required — the
-     *  server reads it on `GET /config` to pick the right tenant. */
-    val bundleId: String,
-    val token: String? = null,
-    val userId: String? = null
+data class JoinSessionInput(
+    val channel: Channel,
+    val sessionId: String,
+    val url: String,
+    val token: String,
 )
 
-sealed class ClientEvent {
-    data class MessageAdded(val message: Message, val index: Int) : ClientEvent()
-    data class MessageUpdated(val message: Message, val index: Int) : ClientEvent()
-    data class SessionUpdated(val sessionId: String) : ClientEvent()
-    data class ControlUpdated(val control: Control) : ClientEvent()
-    data class ToolCalls(val toolCalls: List<ToolCall>) : ClientEvent()
-    data class Typing(val isTyping: Boolean) : ClientEvent()
-    data class CallStatus(val status: String) : ClientEvent()
-    data class CallError(val error: String?) : ClientEvent()
-}
+data class ActiveSession(
+    val sessionId: String,
+    val channel: Channel,
+)
 
-// ── Server config ──
+// ── Server config ────────────────────────────────────────────────────
 
-/**
- * Tenant configuration returned by `GET /config` at connect time.
- * Exposed so consumers can gate UI on chat/call availability, render
- * attachment limits, or read the start message.
- */
-data class ServerConfig(
-    val startMessage: String,
-    val concurrentChannels: Boolean,
-    val isChatEnabled: Boolean,
-    val isCallEnabled: Boolean,
-    val attachmentPolicy: AttachmentPolicy
+data class AttachmentRule(
+    val enabled: Boolean,
+    /** Maximum allowed size in megabytes. */
+    val maxSize: Int,
 )
 
 data class AttachmentPolicy(
     val images: AttachmentRule,
     val documents: AttachmentRule,
     val videos: AttachmentRule,
-    val audio: AttachmentRule
+    val audio: AttachmentRule,
 ) {
     companion object {
-        /** Fallback returned when the native layer refuses to hand back
-         *  the policy (e.g. null handle). All categories disabled. */
+        /** Fallback policy with every category disabled and `maxSize = 0`. */
         val DISABLED = AttachmentPolicy(
-            images = AttachmentRule(enabled = false, maxSize = 0u),
-            documents = AttachmentRule(enabled = false, maxSize = 0u),
-            videos = AttachmentRule(enabled = false, maxSize = 0u),
-            audio = AttachmentRule(enabled = false, maxSize = 0u),
+            images = AttachmentRule(enabled = false, maxSize = 0),
+            documents = AttachmentRule(enabled = false, maxSize = 0),
+            videos = AttachmentRule(enabled = false, maxSize = 0),
+            audio = AttachmentRule(enabled = false, maxSize = 0),
         )
     }
 }
 
-data class AttachmentRule(
-    val enabled: Boolean,
-    /** Maximum allowed size in megabytes. */
-    val maxSize: UInt
+data class ServerConfig(
+    val startMessage: String,
+    val multipleChannels: Boolean,
+    val isChatEnabled: Boolean,
+    val isCallEnabled: Boolean,
+    val attachmentPolicy: AttachmentPolicy,
 )
 
-// ── Errors ──
+// ── Session history ──────────────────────────────────────────────────
 
-/**
- * Structured failure reason surfaced by [OrigonClient]'s constructor.
- * The type lets the caller dispatch on `code` (e.g. `bundle_id_not_allowed`)
- * rather than string-matching messages.
- */
-sealed class ConnectError {
-    /** `field` names the missing input — `endpoint` or `bundle_id`. */
-    data class MissingField(val field: String) : ConnectError()
-    /** DNS/TLS/connect/timeout/body-decode failure. */
-    data class Transport(val message: String) : ConnectError()
-    /** 403 from the server; `code` is the machine-readable envelope code. */
-    data class Forbidden(val code: String, val message: String) : ConnectError()
-    /** Other non-2xx, non-5xx response with the envelope attached. */
-    data class Http(val status: Int, val code: String, val message: String) : ConnectError()
-    /** 5xx — treat as transient and let the user retry. */
-    data class ServerUnavailable(val status: Int) : ConnectError()
-    /** Unexpected native-layer failure. */
-    data class Unknown(val message: String) : ConnectError()
+/** One transcript line / message. Mirrors the Rust `Message` shape. */
+@Serializable
+data class Message(
+    val role: String,
+    val id: String,
+    val text: String? = null,
+    val html: String? = null,
+    val timestamp: String? = null,
+    val userId: String? = null,
+    val userName: String? = null,
+)
+
+@Serializable
+data class Contact(
+    val id: String,
+    val name: String,
+)
+
+/** Element of the array returned by [OrigonClient.getSessions]. */
+@Serializable
+data class SessionSummary(
+    val sessionId: String,
+    val subject: String,
+    val channel: Channel,
+    val createdAt: String,
+    val updatedAt: String,
+    val lastMessage: Message? = null,
+    val contact: Contact? = null,
+)
+
+/** Returned by [OrigonClient.getSession]. */
+@Serializable
+data class SessionHistory(
+    val history: List<Message> = emptyList(),
+)
+
+// ── Disconnect / events ──────────────────────────────────────────────
+
+sealed class DisconnectReason {
+    data object LocalClose : DisconnectReason()
+    data object NetworkLoss : DisconnectReason()
+    data object EndpointNotProvisioned : DisconnectReason()
+    data object EndpointAlreadyConnected : DisconnectReason()
+    data object TokenInvalid : DisconnectReason()
+    data object TokenExpired : DisconnectReason()
+    data object TokenReplayed : DisconnectReason()
+    data object ProtocolViolation : DisconnectReason()
+    data object CapabilityMissing : DisconnectReason()
+    data object IllegalState : DisconnectReason()
+    data object ResourceExhausted : DisconnectReason()
+    data object ReplayLost : DisconnectReason()
+    data class ServerClosed(val code: Long, val detail: String?) : DisconnectReason()
+
+    /**
+     * Local transport failed before the MOQ session was established
+     * (QUIC dial / DNS / TLS / etc.). [detail] carries the underlying
+     * error message for diagnostics.
+     */
+    data class TransportClosed(val detail: String?) : DisconnectReason()
 
     internal companion object {
-        // Mirror of `OrigonConnectErrorKind` in native_client.h.
-        private const val NONE = 0
-        private const val MISSING_FIELD = 1
-        private const val TRANSPORT = 2
-        private const val FORBIDDEN = 3
-        private const val HTTP = 4
-        private const val SERVER_UNAVAILABLE = 5
-        private const val UNKNOWN = 6
-
-        fun fromNative(kind: Int, status: Int, code: String, message: String): ConnectError =
+        fun fromBridge(kind: Int, serverCode: Long, serverDetail: String?): DisconnectReason =
             when (kind) {
-                MISSING_FIELD -> MissingField(field = code.ifEmpty { "unknown" })
-                TRANSPORT -> Transport(message = message)
-                FORBIDDEN -> Forbidden(code = code, message = message)
-                HTTP -> Http(status = status, code = code, message = message)
-                SERVER_UNAVAILABLE -> ServerUnavailable(status = status)
-                NONE, UNKNOWN -> Unknown(message = message.ifEmpty { "client create failed" })
-                else -> Unknown(message = "unexpected error kind: $kind")
+                SessionBridge.DISCONNECT_REASON_LOCAL_CLOSE -> LocalClose
+                SessionBridge.DISCONNECT_REASON_NETWORK_LOSS -> NetworkLoss
+                SessionBridge.DISCONNECT_REASON_ENDPOINT_NOT_PROVISIONED -> EndpointNotProvisioned
+                SessionBridge.DISCONNECT_REASON_ENDPOINT_ALREADY_CONNECTED -> EndpointAlreadyConnected
+                SessionBridge.DISCONNECT_REASON_TOKEN_INVALID -> TokenInvalid
+                SessionBridge.DISCONNECT_REASON_TOKEN_EXPIRED -> TokenExpired
+                SessionBridge.DISCONNECT_REASON_TOKEN_REPLAYED -> TokenReplayed
+                SessionBridge.DISCONNECT_REASON_PROTOCOL_VIOLATION -> ProtocolViolation
+                SessionBridge.DISCONNECT_REASON_CAPABILITY_MISSING -> CapabilityMissing
+                SessionBridge.DISCONNECT_REASON_ILLEGAL_STATE -> IllegalState
+                SessionBridge.DISCONNECT_REASON_RESOURCE_EXHAUSTED -> ResourceExhausted
+                SessionBridge.DISCONNECT_REASON_REPLAY_LOST -> ReplayLost
+                SessionBridge.DISCONNECT_REASON_SERVER_CLOSED ->
+                    ServerClosed(serverCode, serverDetail)
+                SessionBridge.DISCONNECT_REASON_TRANSPORT_CLOSED ->
+                    TransportClosed(serverDetail)
+                else -> ServerClosed(serverCode, serverDetail)
             }
     }
 }
 
-class OrigonException(message: String) : Exception(message)
+/**
+ * Async event from a session. All variants carry [sessionId] so the
+ * consumer can demultiplex when several sessions are active at once.
+ *
+ * Chat-side variants (message added/updated, tool calls) are not
+ * surfaced in this iteration — `OrigonClient.pollEvent` silently skips
+ * them. They will be added when the chat plane lands in the session
+ * crate.
+ */
+sealed class ClientEvent {
+    abstract val sessionId: String
 
-/** Thrown when `OrigonClient(config)` fails. Carries the structured
- *  [ConnectError] so the host app can build a readable message. */
-class OrigonConnectException(val reason: ConnectError) :
-    Exception(reason.toString())
+    data class SessionUpdated(
+        override val sessionId: String,
+        val newSessionId: String,
+    ) : ClientEvent()
+
+    data class ControlUpdated(
+        override val sessionId: String,
+        val control: Control,
+    ) : ClientEvent()
+
+    data class Typing(
+        override val sessionId: String,
+        val isTyping: Boolean,
+    ) : ClientEvent()
+
+    data class Connected(override val sessionId: String) : ClientEvent()
+
+    data class Reconnecting(
+        override val sessionId: String,
+        val attempt: Int,
+        val reason: DisconnectReason,
+    ) : ClientEvent()
+
+    data class Reconnected(override val sessionId: String) : ClientEvent()
+
+    data class PeerAttached(
+        override val sessionId: String,
+        val peerEndpointId: String,
+        val alias: Long,
+    ) : ClientEvent()
+
+    data class PeerDetached(
+        override val sessionId: String,
+        val peerEndpointId: String,
+        val alias: Long,
+    ) : ClientEvent()
+
+    data class Disconnected(
+        override val sessionId: String,
+        val reason: DisconnectReason,
+    ) : ClientEvent()
+
+    /** Voice-side soft error. `message == null` means a previously-surfaced error has cleared. */
+    data class CallError(
+        override val sessionId: String,
+        val message: String?,
+    ) : ClientEvent()
+}

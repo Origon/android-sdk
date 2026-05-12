@@ -1,6 +1,7 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("maven-publish")
 }
 
@@ -41,7 +42,7 @@ android {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 }
 
 afterEvaluate {
@@ -51,7 +52,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "ai.origon"
                 artifactId = "sdk"
-                version = "0.1.0"
+                version = "0.2.0"
             }
         }
     }
