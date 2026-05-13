@@ -18,7 +18,6 @@ package ai.origon.sdk.bridge
  * | `EVENT_MESSAGE_UPDATED`          | `sessionId` only                                                        |
  * | `EVENT_SESSION_UPDATED`          | `sessionId`, `newSessionId`                                             |
  * | `EVENT_CONTROL_UPDATED`          | `sessionId`, `control`                                                  |
- * | `EVENT_TOOL_CALLS`               | `sessionId` only                                                        |
  * | `EVENT_TYPING`                   | `sessionId`, `typing`                                                   |
  * | `EVENT_CONNECTED`                | `sessionId`                                                             |
  * | `EVENT_RECONNECTING`             | `sessionId`, `reconnectAttempt`, `disconnectReasonKind` (+ server* if SERVER_CLOSED) |
@@ -35,7 +34,7 @@ internal class SessionEvent {
     /** EVENT_SESSION_UPDATED — the new id after rotation. */
     @JvmField var newSessionId: String? = null
 
-    /** EVENT_CONTROL_UPDATED — `SessionBridge.CONTROL_AGENT` or `CONTROL_HUMAN`. */
+    /** EVENT_CONTROL_UPDATED — `SessionBridge.CONTROL_AI` or `CONTROL_USER`. */
     @JvmField var control: Int = 0
 
     /** EVENT_TYPING — true when remote started typing, false when stopped. */

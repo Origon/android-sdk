@@ -129,7 +129,10 @@ client.joinSession(JoinSessionInput(
 
 - `ClientConfig` — endpoint, bundleId, token, userId, platform, attributes (`JsonObject?`).
 - `Channel` — `CHAT`, `VOICE`.
-- `Control` — `AGENT`, `HUMAN`.
+- `SessionControl` — `AI`, `USER`.
+- `MessageRole` — `AI`, `EXTERNAL`, `USER`, `SYSTEM`.
+- `MessageStatus` — `SENDING`, `DELIVERED`, `FAILED`.
+- `MessageState` — `STREAMING`, `COMPLETED`.
 - `Platform` — `MOBILE`, `WEB`, `NONE`.
 - `StartSessionOptions` — channel, optional sessionId, optional `data` (raw JSON).
 - `StartSessionResponse` — sessionId, url, token.
@@ -139,7 +142,8 @@ client.joinSession(JoinSessionInput(
 - `ServerConfig` — full `/config` snapshot (start message, capability flags, attachment policy).
 - `DisconnectReason` — sealed class of structured reasons.
 - `ClientEvent` — sealed class: `Connected`, `Reconnecting`, `Reconnected`, `PeerAttached`, `PeerDetached`, `Disconnected`, `CallError`, `ControlUpdated`, `Typing`, `SessionUpdated`. Every variant carries `sessionId`.
-- `Message`, `Contact`, `SessionSummary`, `SessionHistory` — typed shapes returned by `getSessions()` / `getSession(id)`.
+- `Message`, `Attachment`, `Contact`, `SessionSummary`, `SessionHistory` — typed shapes returned by `getSessions()` / `getSession(id)`.
+- `SendMessagePayload` — `text`, `attachments` (input shape for `send_message` once chat is integrated).
 
 Chat-side messaging and attachments (`send_message`,
 `upload_attachment`, etc.) will be added when the underlying chat

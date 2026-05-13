@@ -6,8 +6,16 @@
 # Public model classes (data classes / enums / sealed classes)
 -keep class ai.origon.sdk.Channel { *; }
 -keep class ai.origon.sdk.Channel$* { *; }
--keep class ai.origon.sdk.Control { *; }
--keep class ai.origon.sdk.Control$* { *; }
+-keep class ai.origon.sdk.SessionControl { *; }
+-keep class ai.origon.sdk.SessionControl$* { *; }
+-keep class ai.origon.sdk.MessageRole { *; }
+-keep class ai.origon.sdk.MessageRole$* { *; }
+-keep class ai.origon.sdk.MessageStatus { *; }
+-keep class ai.origon.sdk.MessageStatus$* { *; }
+-keep class ai.origon.sdk.MessageState { *; }
+-keep class ai.origon.sdk.MessageState$* { *; }
+-keep class ai.origon.sdk.Attachment { *; }
+-keep class ai.origon.sdk.SendMessagePayload { *; }
 -keep class ai.origon.sdk.Platform { *; }
 -keep class ai.origon.sdk.Platform$* { *; }
 -keep class ai.origon.sdk.ClientConfig { *; }

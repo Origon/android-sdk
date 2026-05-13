@@ -41,16 +41,43 @@ enum class Channel {
     }
 }
 
-enum class Control {
-    AGENT,
-    HUMAN;
+@Serializable
+enum class SessionControl {
+    @SerialName("ai") AI,
+    @SerialName("user") USER;
 
     internal companion object {
-        fun fromBridge(value: Int): Control = when (value) {
-            SessionBridge.CONTROL_HUMAN -> HUMAN
-            else -> AGENT
+        fun fromBridge(value: Int): SessionControl = when (value) {
+            SessionBridge.CONTROL_USER -> USER
+            else -> AI
         }
     }
+}
+
+@Serializable
+enum class MessageRole {
+    @SerialName("ai") AI,
+    @SerialName("external") EXTERNAL,
+    @SerialName("user") USER,
+    @SerialName("system") SYSTEM,
+}
+
+/** Delivery status of a [Message]. */
+@Serializable
+enum class MessageStatus {
+    @SerialName("sending") SENDING,
+    @SerialName("delivered") DELIVERED,
+    @SerialName("failed") FAILED,
+}
+
+/**
+ * Generation state of a [Message]. `STREAMING` while tokens are still
+ * arriving from the agent; `COMPLETED` once finalised.
+ */
+@Serializable
+enum class MessageState {
+    @SerialName("streaming") STREAMING,
+    @SerialName("completed") COMPLETED,
 }
 
 enum class Platform {
@@ -144,16 +171,38 @@ data class ServerConfig(
 
 // ── Session history ──────────────────────────────────────────────────
 
+/**
+ * Uploaded media descriptor. Surfaced on [Message.attachments] and
+ * passed back into [SendMessagePayload.attachments].
+ */
+@Serializable
+data class Attachment(
+    val id: String = "",
+    val name: String = "",
+    val contentType: String = "",
+    val url: String = "",
+)
+
 /** One transcript line / message. Mirrors the Rust `Message` shape. */
 @Serializable
 data class Message(
-    val role: String,
-    val id: String,
+    val role: MessageRole = MessageRole.EXTERNAL,
+    val id: String = "",
     val text: String? = null,
     val html: String? = null,
     val timestamp: String? = null,
     val userId: String? = null,
     val userName: String? = null,
+    val attachments: List<Attachment> = emptyList(),
+    val errorText: String? = null,
+    val status: MessageStatus = MessageStatus.DELIVERED,
+    val state: MessageState = MessageState.COMPLETED,
+)
+
+/** Payload for [OrigonClient.sendMessage]. Mirrors the Rust `SendMessagePayload` shape. */
+data class SendMessagePayload(
+    val text: String? = null,
+    val attachments: List<Attachment> = emptyList(),
 )
 
 @Serializable
@@ -178,6 +227,8 @@ data class SessionSummary(
 @Serializable
 data class SessionHistory(
     val history: List<Message> = emptyList(),
+    /** Who is currently driving the session. */
+    val control: SessionControl = SessionControl.AI,
 )
 
 // ── Disconnect / events ──────────────────────────────────────────────
@@ -247,7 +298,7 @@ sealed class ClientEvent {
 
     data class ControlUpdated(
         override val sessionId: String,
-        val control: Control,
+        val control: SessionControl,
     ) : ClientEvent()
 
     data class Typing(

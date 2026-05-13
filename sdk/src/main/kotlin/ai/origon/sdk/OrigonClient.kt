@@ -231,8 +231,8 @@ class OrigonClient(config: ClientConfig) : AutoCloseable {
      * Polls the next event. Returns null when the queue is idle.
      *
      * Loops internally to skip chat-side events (`MessageAdded`,
-     * `MessageUpdated`, `ToolCalls`) that are not yet surfaced — a null
-     * return means "queue empty", not "next event was a chat event".
+     * `MessageUpdated`) that are not yet surfaced — a null return
+     * means "queue empty", not "next event was a chat event".
      */
     fun pollEvent(): ClientEvent? {
         ensureOpen()
@@ -248,14 +248,13 @@ class OrigonClient(config: ClientConfig) : AutoCloseable {
         val sid = raw.sessionId ?: return null
         return when (raw.kind) {
             SessionBridge.EVENT_MESSAGE_ADDED,
-            SessionBridge.EVENT_MESSAGE_UPDATED,
-            SessionBridge.EVENT_TOOL_CALLS -> null
+            SessionBridge.EVENT_MESSAGE_UPDATED -> null
 
             SessionBridge.EVENT_SESSION_UPDATED ->
                 ClientEvent.SessionUpdated(sid, raw.newSessionId.orEmpty())
 
             SessionBridge.EVENT_CONTROL_UPDATED ->
-                ClientEvent.ControlUpdated(sid, Control.fromBridge(raw.control))
+                ClientEvent.ControlUpdated(sid, SessionControl.fromBridge(raw.control))
 
             SessionBridge.EVENT_TYPING ->
                 ClientEvent.Typing(sid, raw.typing)

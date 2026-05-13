@@ -136,16 +136,15 @@ internal object SessionBridge {
     const val CHANNEL_CHAT = 0
     const val CHANNEL_VOICE = 1
 
-    // Control — value of SessionEvent.control on CONTROL_UPDATED.
-    const val CONTROL_AGENT = 0
-    const val CONTROL_HUMAN = 1
+    // SessionControl — value of SessionEvent.control on CONTROL_UPDATED.
+    const val CONTROL_AI = 0
+    const val CONTROL_USER = 1
 
     // Event discriminants — value of SessionEvent.kind.
     const val EVENT_MESSAGE_ADDED = 1
     const val EVENT_MESSAGE_UPDATED = 2
     const val EVENT_SESSION_UPDATED = 3
     const val EVENT_CONTROL_UPDATED = 4
-    const val EVENT_TOOL_CALLS = 5
     const val EVENT_TYPING = 6
     const val EVENT_CONNECTED = 7
     const val EVENT_RECONNECTING = 8
