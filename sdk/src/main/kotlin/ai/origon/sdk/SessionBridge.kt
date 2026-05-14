@@ -108,6 +108,22 @@ internal object SessionBridge {
     @JvmStatic external fun toggleHold(handle: Long, id: String): Boolean
     @JvmStatic external fun sendDtmf(handle: Long, id: String, digit: Char, durationMs: Int)
 
+    // ── Chat ─────────────────────────────────────────────────────────
+
+    /**
+     * POST `<sessionUrl>/message`. `payloadJson` is a JSON-encoded
+     * [SendMessagePayload]; pass `null` for an empty payload. Returns
+     * the server-issued [Message] as a JSON string for the high-level
+     * wrapper to decode.
+     */
+    @JvmStatic external fun sendMessage(handle: Long, id: String, payloadJson: String?): String
+
+    /** Register a keystroke. The SDK debounces outbound `/typing` POSTs. */
+    @JvmStatic external fun notifyTyping(handle: Long, id: String)
+
+    /** Force outbound typing state to "off" immediately. */
+    @JvmStatic external fun stopTyping(handle: Long, id: String)
+
     // ── Active sessions snapshot ─────────────────────────────────────
 
     /**

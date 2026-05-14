@@ -14,8 +14,8 @@ package ai.origon.sdk.bridge
  *
  * | `kind`                           | populated fields                                                       |
  * | -------------------------------- | ---------------------------------------------------------------------- |
- * | `EVENT_MESSAGE_ADDED`            | `sessionId` only (payload TBD when chat is integrated)                 |
- * | `EVENT_MESSAGE_UPDATED`          | `sessionId` only                                                        |
+ * | `EVENT_MESSAGE_ADDED`            | `sessionId`, `messageJson` (Message serialized as JSON)                |
+ * | `EVENT_MESSAGE_UPDATED`          | `sessionId`, `messageJson`, `updateId` (provisional localId or message.id) |
  * | `EVENT_SESSION_UPDATED`          | `sessionId`, `newSessionId`                                             |
  * | `EVENT_CONTROL_UPDATED`          | `sessionId`, `control`                                                  |
  * | `EVENT_TYPING`                   | `sessionId`, `typing`                                                   |
@@ -63,4 +63,10 @@ internal class SessionEvent {
 
     /** EVENT_CALL_ERROR — true = error present, false = error cleared. */
     @JvmField var callErrorPresent: Boolean = false
+
+    /** EVENT_MESSAGE_ADDED / EVENT_MESSAGE_UPDATED — `Message` payload as JSON. */
+    @JvmField var messageJson: String? = null
+
+    /** EVENT_MESSAGE_UPDATED — row lookup id (= provisional `localId` for outbound ack/failure, or `message.id` for server-driven updates). */
+    @JvmField var updateId: String? = null
 }

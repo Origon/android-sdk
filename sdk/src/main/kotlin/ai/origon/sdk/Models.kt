@@ -183,11 +183,27 @@ data class Attachment(
     val url: String = "",
 )
 
-/** One transcript line / message. Mirrors the Rust `Message` shape. */
+/**
+ * One transcript line / message. Mirrors the Rust `Message` shape.
+ *
+ * For outbound sends the SDK fires `MessageAdded` with a provisional
+ * `Message(id = "", localId = <uuid>, status = SENDING, ...)` before
+ * the wire round-trip. The server-issued `id` lands on the follow-up
+ * `MessageUpdated`. The stable lookup key during the sending phase is
+ * `localId`; once delivered, both `id` and `localId` are populated.
+ */
 @Serializable
 data class Message(
     val role: MessageRole = MessageRole.EXTERNAL,
     val id: String = "",
+    /**
+     * SDK-issued temporary id for outbound messages awaiting server
+     * confirmation. Set on the provisional `MessageAdded` payload so
+     * the consumer can locate the row when `MessageUpdated` arrives.
+     * `null` for inbound messages or any message originating on the
+     * server.
+     */
+    val localId: String? = null,
     val text: String? = null,
     val html: String? = null,
     val timestamp: String? = null,
@@ -200,8 +216,10 @@ data class Message(
 )
 
 /** Payload for [OrigonClient.sendMessage]. Mirrors the Rust `SendMessagePayload` shape. */
+@Serializable
 data class SendMessagePayload(
     val text: String? = null,
+    val html: String? = null,
     val attachments: List<Attachment> = emptyList(),
 )
 
@@ -282,14 +300,32 @@ sealed class DisconnectReason {
 /**
  * Async event from a session. All variants carry [sessionId] so the
  * consumer can demultiplex when several sessions are active at once.
- *
- * Chat-side variants (message added/updated, tool calls) are not
- * surfaced in this iteration — `OrigonClient.pollEvent` silently skips
- * them. They will be added when the chat plane lands in the session
- * crate.
  */
 sealed class ClientEvent {
     abstract val sessionId: String
+
+    /**
+     * A message was appended to the transcript — outbound provisional
+     * (`status == SENDING`), inbound peer message, or future AI
+     * message. Store under the key `message.localId ?: message.id`
+     * so [MessageUpdated] can find it.
+     */
+    data class MessageAdded(
+        override val sessionId: String,
+        val message: Message,
+    ) : ClientEvent()
+
+    /**
+     * A previously-added message was updated. [id] matches the lookup
+     * key the consumer used when the row was added — equal to the
+     * provisional's `localId` for outbound ack / failure, or
+     * `message.id` for server-driven updates. Always non-empty.
+     */
+    data class MessageUpdated(
+        override val sessionId: String,
+        val id: String,
+        val message: Message,
+    ) : ClientEvent()
 
     data class SessionUpdated(
         override val sessionId: String,

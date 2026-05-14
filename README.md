@@ -103,6 +103,50 @@ client.joinSession(JoinSessionInput(
 ))
 ```
 
+### Chat
+
+`sendMessage`, `notifyTyping`, and `stopTyping` all require an active
+chat session. **Call `startSession(channel = Channel.CHAT, ...)`
+first** — otherwise these throw `SessionException(kind = NO_SESSION)`.
+The same applies after `endSession(id)`.
+
+```kotlin
+// Outbound send. The SDK fires ClientEvent.MessageAdded (status =
+// SENDING) before the wire round-trip and ClientEvent.MessageUpdated
+// (delivered or failed) after — both surface on pollEvent(). The
+// return value is the server-issued Message.
+val msg = client.sendMessage(
+    id = sessionId,
+    payload = SendMessagePayload(text = "hello", html = "hello"),
+)
+
+// Typing — call per keystroke (e.g. from a TextWatcher). The SDK
+// debounces; only one outbound `{state: "on"}` fires per typing burst
+// and a `{state: "off"}` is auto-emitted after ~3 s of no further
+// calls. Fire `stopTyping(id)` explicitly when the input clears
+// (e.g. user deleted all text) to snap the peer's "typing…"
+// indicator off instantly.
+client.notifyTyping(id = sessionId)
+client.stopTyping(id = sessionId)
+```
+
+Polling chat events:
+
+```kotlin
+while (true) {
+    val event = client.pollEvent() ?: break
+    when (event) {
+        is ClientEvent.MessageAdded ->
+            // Store event.message under (message.localId ?: message.id)
+        is ClientEvent.MessageUpdated ->
+            // Look up the row by event.id (matches the original lookup key)
+        is ClientEvent.Typing ->
+            // Show / hide "typing…" indicator
+        else -> Unit
+    }
+}
+```
+
 ## API Reference
 
 ### OrigonClient
@@ -118,6 +162,9 @@ client.joinSession(JoinSessionInput(
 | `setMute(id, muted)` / `setMuteAll(muted)` | Voice — absolute mute. |
 | `toggleHold(id)` | Voice — toggle hold. Returns the new state. |
 | `sendDtmf(id, digit, durationMs)` | Voice — send a DTMF digit per RFC 4733. |
+| `sendMessage(id, payload)` | Chat — POST `<sessionUrl>/message`. Returns the server-issued `Message`. Fires `MessageAdded` then `MessageUpdated`. |
+| `notifyTyping(id)` | Chat — register a keystroke; SDK debounces outbound `/typing` POSTs. |
+| `stopTyping(id)` | Chat — force outbound typing state to "off" immediately. |
 | `activeSessions()` | Snapshot of every active session. |
 | `getSessions()` | `GET /sessions` — list prior sessions for the configured `userId`. |
 | `getSession(id)` | `GET /session/<id>` — transcript for one session. |
@@ -141,13 +188,14 @@ client.joinSession(JoinSessionInput(
 - `AttachmentRule` / `AttachmentPolicy` — tenant policy for attachments.
 - `ServerConfig` — full `/config` snapshot (start message, capability flags, attachment policy).
 - `DisconnectReason` — sealed class of structured reasons.
-- `ClientEvent` — sealed class: `Connected`, `Reconnecting`, `Reconnected`, `PeerAttached`, `PeerDetached`, `Disconnected`, `CallError`, `ControlUpdated`, `Typing`, `SessionUpdated`. Every variant carries `sessionId`.
-- `Message`, `Attachment`, `Contact`, `SessionSummary`, `SessionHistory` — typed shapes returned by `getSessions()` / `getSession(id)`.
-- `SendMessagePayload` — `text`, `attachments` (input shape for `send_message` once chat is integrated).
+- `ClientEvent` — sealed class: `MessageAdded`, `MessageUpdated`, `Connected`, `Reconnecting`, `Reconnected`, `PeerAttached`, `PeerDetached`, `Disconnected`, `CallError`, `ControlUpdated`, `Typing`, `SessionUpdated`. Every variant carries `sessionId`.
+- `Message` — typed transcript line. Carries `id`, `localId`, `role`, `text`, `html`, `userId`, `userName`, `timestamp`, `attachments`, `errorText`, `status`, `state`.
+- `Attachment`, `Contact`, `SessionSummary`, `SessionHistory` — typed shapes returned by `getSessions()` / `getSession(id)`.
+- `SendMessagePayload` — `text`, `html`, `attachments` (input shape for `sendMessage(id, payload)`).
 
-Chat-side messaging and attachments (`send_message`,
-`upload_attachment`, etc.) will be added when the underlying chat
-plane lands in the session crate.
+Attachment uploads (`upload_attachment` etc.) are not yet wired
+through the SDK; the `attachments` field on `SendMessagePayload` is
+reserved for that future surface.
 
 ## License
 

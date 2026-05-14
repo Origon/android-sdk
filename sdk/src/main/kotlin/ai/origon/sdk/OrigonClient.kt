@@ -225,30 +225,67 @@ class OrigonClient(config: ClientConfig) : AutoCloseable {
         SessionBridge.sendDtmf(handle, id, digit, durationMs)
     }
 
-    // ── Events ───────────────────────────────────────────────────────
+    // ── Chat ─────────────────────────────────────────────────────────
 
     /**
-     * Polls the next event. Returns null when the queue is idle.
+     * Chat-only — send a text / HTML message on the named session.
      *
-     * Loops internally to skip chat-side events (`MessageAdded`,
-     * `MessageUpdated`) that are not yet surfaced — a null return
-     * means "queue empty", not "next event was a chat event".
+     * Requires an active chat session for [id] (call [startSession]
+     * first). The SDK fires [ClientEvent.MessageAdded] (provisional,
+     * `status == SENDING`) before the wire round-trip and
+     * [ClientEvent.MessageUpdated] (delivered or failed) after — both
+     * surface on [pollEvent]. Returns the server-issued [Message].
      */
+    fun sendMessage(id: String, payload: SendMessagePayload): Message {
+        ensureOpen()
+        val payloadJson = JSON.encodeToString(SendMessagePayload.serializer(), payload)
+        val responseJson = SessionBridge.sendMessage(handle, id, payloadJson)
+        return JSON.decodeFromString(Message.serializer(), responseJson)
+    }
+
+    /**
+     * Chat-only — register a keystroke on the named session. Cheap to
+     * call from a `TextWatcher`; the SDK debounces outbound
+     * `<sessionUrl>/typing` POSTs so only one wire call fires per
+     * typing burst.
+     */
+    fun notifyTyping(id: String) {
+        ensureOpen()
+        SessionBridge.notifyTyping(handle, id)
+    }
+
+    /**
+     * Chat-only — force outbound typing state to "off" immediately,
+     * cancelling any in-flight debounce. UI fires this on empty-text
+     * transitions; the SDK also fires it implicitly on [sendMessage]
+     * and on [endSession].
+     */
+    fun stopTyping(id: String) {
+        ensureOpen()
+        SessionBridge.stopTyping(handle, id)
+    }
+
+    // ── Events ───────────────────────────────────────────────────────
+
+    /** Polls the next event. Returns null when the queue is idle. */
     fun pollEvent(): ClientEvent? {
         ensureOpen()
-        while (true) {
-            val raw = SessionBridge.pollEvent(handle) ?: return null
-            val mapped = mapEvent(raw)
-            if (mapped != null) return mapped
-            // Chat-side event we don't surface yet — drain and try next.
-        }
+        val raw = SessionBridge.pollEvent(handle) ?: return null
+        return mapEvent(raw)
     }
 
     private fun mapEvent(raw: SessionEvent): ClientEvent? {
         val sid = raw.sessionId ?: return null
         return when (raw.kind) {
-            SessionBridge.EVENT_MESSAGE_ADDED,
-            SessionBridge.EVENT_MESSAGE_UPDATED -> null
+            SessionBridge.EVENT_MESSAGE_ADDED -> {
+                val msg = decodeMessage(raw.messageJson) ?: return null
+                ClientEvent.MessageAdded(sid, msg)
+            }
+
+            SessionBridge.EVENT_MESSAGE_UPDATED -> {
+                val msg = decodeMessage(raw.messageJson) ?: return null
+                ClientEvent.MessageUpdated(sid, raw.updateId.orEmpty(), msg)
+            }
 
             SessionBridge.EVENT_SESSION_UPDATED ->
                 ClientEvent.SessionUpdated(sid, raw.newSessionId.orEmpty())
@@ -299,6 +336,21 @@ class OrigonClient(config: ClientConfig) : AutoCloseable {
                 )
 
             else -> null
+        }
+    }
+
+    /**
+     * Decode the bridge's `messageJson` field into a typed [Message].
+     * Returns `null` on any parse failure (caller treats as "drop the
+     * event"). Lenient — unknown keys are ignored so SDK-vs-server
+     * schema drift doesn't lose the whole event.
+     */
+    private fun decodeMessage(json: String?): Message? {
+        if (json.isNullOrEmpty()) return null
+        return try {
+            JSON.decodeFromString(Message.serializer(), json)
+        } catch (e: Throwable) {
+            null
         }
     }
 
