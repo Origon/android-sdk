@@ -49,13 +49,15 @@ import ai.origon.sdk.*
 // Optional: install Rust-side logging once at app launch.
 OrigonClient.initLogging()
 
-// Create the client.
+// Create the client. `context` is an Android Context (usually
+// `applicationContext`); the SDK uses it to read `packageName` and
+// send it as `X-Bundle-Id` on every HTTPS call.
 val client = OrigonClient(
+    context,
     ClientConfig(
         endpoint = "https://api.origon.ai",
-        bundleId = "com.acme.android",
         token = "your-auth-token",
-    )
+    ),
 )
 
 // Start a voice session.
@@ -174,7 +176,7 @@ while (true) {
 
 ### Types
 
-- `ClientConfig` — endpoint, bundleId, token, userId, platform, attributes (`JsonObject?`).
+- `ClientConfig` — endpoint, token, userId, platform, attributes (`JsonObject?`). The application id is resolved automatically from `context.packageName` (passed to `OrigonClient`) and sent as `X-Bundle-Id` on every HTTPS call.
 - `Channel` — `CHAT`, `VOICE`.
 - `SessionControl` — `AI`, `USER`.
 - `MessageRole` — `AI`, `EXTERNAL`, `USER`, `SYSTEM`.

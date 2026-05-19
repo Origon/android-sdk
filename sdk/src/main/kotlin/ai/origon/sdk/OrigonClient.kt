@@ -18,11 +18,14 @@ import kotlinx.serialization.json.JsonObject
  * All fallible methods throw [SessionException] with a structured
  * `kind` / `statusCode` / `code` / `message`.
  */
-class OrigonClient(config: ClientConfig) : AutoCloseable {
+class OrigonClient(
+    context: android.content.Context,
+    config: ClientConfig,
+) : AutoCloseable {
 
     private val handle: Long = SessionBridge.initialize(
         endpoint = config.endpoint,
-        bundleId = config.bundleId,
+        bundleId = context.applicationContext.packageName,
         token = config.token,
         userId = config.userId,
         platform = config.platform.toBridge(),

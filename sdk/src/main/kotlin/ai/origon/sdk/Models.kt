@@ -96,8 +96,6 @@ enum class Platform {
 
 data class ClientConfig(
     val endpoint: String,
-    /** Android application id. When set, sent as `X-Bundle-Id` on every HTTPS call. */
-    val bundleId: String? = null,
     val token: String? = null,
     val userId: String? = null,
     val platform: Platform = Platform.MOBILE,
