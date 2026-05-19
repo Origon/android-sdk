@@ -1,7 +1,10 @@
 package ai.origon.sdk
 
 import ai.origon.sdk.bridge.SessionEvent
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
@@ -263,6 +266,159 @@ class OrigonClient(config: ClientConfig) : AutoCloseable {
     fun stopTyping(id: String) {
         ensureOpen()
         SessionBridge.stopTyping(handle, id)
+    }
+
+    // ── Attachments ──────────────────────────────────────────────────
+
+    /**
+     * Upload a file from the local filesystem to the named session and
+     * return the server-issued [Attachment]. The SDK streams the body
+     * straight from disk; auto-detects MIME from a 256-byte head plus
+     * the [fileName] extension. Runs on [Dispatchers.IO].
+     *
+     * [uploadId] doubles as the cancellation key — pass it as
+     * `attachmentId` to [deleteAttachment] while the upload is in
+     * flight to abort it (throws with `kind = ERROR_CANCELLED`). After
+     * completion, use the server-issued `attachment.id` for deletion.
+     *
+     * [onProgress] fires from a JNI worker thread; hop to the main
+     * thread before touching UI state. `percent` is `null` when the
+     * total size is unknown.
+     *
+     * Throws [SessionException]: `ERROR_OTHER` for filesystem errors,
+     * `ERROR_ATTACHMENT` for precheck failures (`empty_file`,
+     * `policy_unsupported_type`, `policy_type_disabled`,
+     * `policy_too_large`), `ERROR_HTTP` / `ERROR_SERVER_UNAVAILABLE`
+     * for wire failures, `ERROR_CANCELLED` when cancelled.
+     */
+    suspend fun uploadAttachment(
+        sessionId: String,
+        path: String,
+        fileName: String,
+        uploadId: String = UUID.randomUUID().toString(),
+        onProgress: ((UploadProgress) -> Unit)? = null,
+    ): Attachment {
+        ensureOpen()
+        val callback = onProgress?.let { cb ->
+            UploadProgressCallback { uploaded, total ->
+                val totalOpt: Long? = if (total < 0) null else total
+                val percent: Int? = totalOpt?.let {
+                    (uploaded * 100 / it.coerceAtLeast(1)).toInt().coerceIn(0, 100)
+                }
+                cb(UploadProgress(uploaded, totalOpt, percent))
+            }
+        }
+        val json = withContext(Dispatchers.IO) {
+            SessionBridge.uploadAttachment(
+                handle,
+                sessionId,
+                uploadId,
+                path,
+                fileName,
+                callback,
+            )
+        }
+        return JSON.decodeFromString(Attachment.serializer(), json)
+    }
+
+    /**
+     * Convenience overload that copies a [content://] (or `file://` /
+     * `android.resource://`) [uri] into `context.cacheDir` before
+     * uploading, then deletes the cache file once the upload settles.
+     * The SDK can't open `content://` URIs directly.
+     */
+    suspend fun uploadAttachment(
+        sessionId: String,
+        context: android.content.Context,
+        uri: android.net.Uri,
+        fileName: String,
+        uploadId: String = UUID.randomUUID().toString(),
+        onProgress: ((UploadProgress) -> Unit)? = null,
+    ): Attachment {
+        ensureOpen()
+        val tempFile = withContext(Dispatchers.IO) {
+            val ext = fileName.substringAfterLast('.', missingDelimiterValue = "")
+            val suffix = if (ext.isEmpty()) "" else ".$ext"
+            val out = java.io.File.createTempFile("upload-", suffix, context.cacheDir)
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                out.outputStream().use { output -> input.copyTo(output) }
+            } ?: throw SessionException(
+                SessionBridge.ERROR_OTHER,
+                0,
+                null,
+                "uploadAttachment: could not open content URI $uri",
+            )
+            out
+        }
+        return try {
+            uploadAttachment(
+                sessionId = sessionId,
+                path = tempFile.absolutePath,
+                fileName = fileName,
+                uploadId = uploadId,
+                onProgress = onProgress,
+            )
+        } finally {
+            withContext(Dispatchers.IO) { tempFile.delete() }
+        }
+    }
+
+    /**
+     * Convenience overload for in-memory [bytes]: writes them to
+     * `context.cacheDir` first, then delegates to the path-based
+     * overload.
+     */
+    suspend fun uploadAttachment(
+        sessionId: String,
+        context: android.content.Context,
+        bytes: ByteArray,
+        fileName: String,
+        uploadId: String = UUID.randomUUID().toString(),
+        onProgress: ((UploadProgress) -> Unit)? = null,
+    ): Attachment {
+        ensureOpen()
+        val tempFile = withContext(Dispatchers.IO) {
+            val ext = fileName.substringAfterLast('.', missingDelimiterValue = "")
+            val suffix = if (ext.isEmpty()) "" else ".$ext"
+            val out = java.io.File.createTempFile("upload-", suffix, context.cacheDir)
+            out.outputStream().use { it.write(bytes) }
+            out
+        }
+        return try {
+            uploadAttachment(
+                sessionId = sessionId,
+                path = tempFile.absolutePath,
+                fileName = fileName,
+                uploadId = uploadId,
+                onProgress = onProgress,
+            )
+        } finally {
+            withContext(Dispatchers.IO) { tempFile.delete() }
+        }
+    }
+
+    /**
+     * Cancel an in-flight upload or delete a completed attachment on
+     * the named session.
+     *
+     * `attachmentId` is dual-purpose: it can be either the `uploadId`
+     * passed to [uploadAttachment] (cancels the in-flight upload — no
+     * network call, the upload's awaiter throws [SessionException]
+     * with `kind = SessionBridge.ERROR_CANCELLED`) or the server-issued
+     * `attachment.id` of a completed upload (issues `DELETE` on the
+     * server). The SDK figures it out: it checks its in-flight uploads
+     * table first, then falls through to the wire call.
+     *
+     * Runs on [Dispatchers.IO]. A 404 from the server surfaces as
+     * [SessionException] with `kind = SessionBridge.ERROR_HTTP` and
+     * `statusCode == 404` — safe to treat as success when your intent
+     * was "remove the draft from the UI".
+     */
+    suspend fun deleteAttachment(sessionId: String, attachmentId: String) {
+        ensureOpen()
+        withContext(Dispatchers.IO) {
+            SessionBridge.deleteAttachment(handle, sessionId, attachmentId)
+        }
     }
 
     // ── Events ───────────────────────────────────────────────────────

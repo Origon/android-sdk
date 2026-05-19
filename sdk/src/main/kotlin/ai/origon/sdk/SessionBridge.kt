@@ -5,6 +5,27 @@ import ai.origon.sdk.bridge.SessionEvent
 import ai.origon.sdk.bridge.StartSessionResponse
 
 /**
+ * Native-bridge progress sink for [SessionBridge.uploadAttachment].
+ *
+ * **Threading.** Fires on a Rust worker thread; the JNI bridge
+ * attaches the thread to the JVM via `AttachCurrentThreadAsDaemon`
+ * before invoking [onProgress]. Implementations must not touch UI
+ * state directly — dispatch to the main thread (or use the
+ * higher-level [OrigonClient.uploadAttachment] which exposes a
+ * coroutine `Flow`).
+ *
+ * **ABI-locked.** The Rust JNI bridge looks up `onProgress` by name
+ * with signature `(JJ)V`. Don't rename or change the parameter types.
+ */
+fun interface UploadProgressCallback {
+    /**
+     * @param uploaded bytes transferred so far.
+     * @param total total bytes expected, or `-1` when unknown.
+     */
+    fun onProgress(uploaded: Long, total: Long)
+}
+
+/**
  * JNI bridge to the Rust `session` crate.
  *
  * The Rust counterpart lives at `client-sdk/session/src/jni_bridge.rs`
@@ -124,6 +145,70 @@ internal object SessionBridge {
     /** Force outbound typing state to "off" immediately. */
     @JvmStatic external fun stopTyping(handle: Long, id: String)
 
+    // ── Attachments ──────────────────────────────────────────────────
+
+    /**
+     * Upload `bytes` as an attachment on the named session. MIME is
+     * auto-detected by the SDK from the content + [name]; the caller
+     * does not pass a content type.
+     *
+     * **Path-based, streamed from disk.** The SDK opens the file at
+     * [path] via `tokio::fs::File::open` inside its own process and
+     * streams it through lumen's multipart encoder — the body is
+     * never fully resident in memory, safe for arbitrarily large
+     * files. Blocking — performs the HTTPS multipart POST on the
+     * calling thread. Use from [Dispatchers.IO] (the [OrigonClient]
+     * wrapper does this automatically).
+     *
+     * [path] must be a filesystem location the process can open
+     * directly. `context.cacheDir` / `context.filesDir` paths work
+     * without permissions. `content://` URIs are NOT openable —
+     * callers must copy them into one of those directories first
+     * (the high-level `OrigonClient.uploadAttachment(uri, ...)`
+     * convenience wrapper does this automatically).
+     *
+     * [uploadId] is a caller-supplied opaque correlation key. Pass the
+     * same value to [deleteAttachment] (as the `key` argument) to
+     * cancel this upload before it completes. After upload completes
+     * successfully, use the server-issued `attachment.id` for deletion
+     * instead. The pair (`sessionId`, `uploadId`) must be unique
+     * across active uploads.
+     *
+     * [progressCb] is optional. When provided, its `onProgress` fires
+     * from a Rust worker thread (see [UploadProgressCallback]).
+     *
+     * Returns the server-issued [Attachment] as a JSON string. Throws
+     * [SessionException] with `kind = ERROR_OTHER` for filesystem
+     * errors (ENOENT, EACCES, etc.), `kind = ERROR_ATTACHMENT` for
+     * precheck failures (`empty_file`, `policy_unsupported_type`,
+     * `policy_type_disabled`, `policy_too_large`), `kind = ERROR_HTTP`
+     * / `ERROR_SERVER_UNAVAILABLE` for wire failures, or `kind =
+     * ERROR_CANCELLED` when cancelled via [deleteAttachment].
+     */
+    @JvmStatic external fun uploadAttachment(
+        handle: Long,
+        sessionId: String,
+        uploadId: String,
+        path: String,
+        name: String,
+        progressCb: UploadProgressCallback?,
+    ): String
+
+    /**
+     * Cancel an in-flight upload or delete a completed attachment.
+     * `key` is dual-purpose: matched against the SDK's in-flight
+     * upload table (keyed by `uploadId`) first; if found, the upload
+     * is cancelled with no network call. Otherwise `key` is treated
+     * as a server-issued `attachment.id` and the SDK calls
+     * `DELETE <sessionUrl>/attachment/:key`. Blocking — use from
+     * [Dispatchers.IO].
+     */
+    @JvmStatic external fun deleteAttachment(
+        handle: Long,
+        sessionId: String,
+        key: String,
+    )
+
     // ── Active sessions snapshot ─────────────────────────────────────
 
     /**
@@ -179,6 +264,10 @@ internal object SessionBridge {
     const val ERROR_HTTP = 6
     const val ERROR_ATTACHMENT = 7
     const val ERROR_OTHER = 8
+    /** Upload was cancelled via `deleteAttachment(...)` using the same
+     *  `uploadId` passed to `uploadAttachment(...)`. Only fires on
+     *  `uploadAttachment`. */
+    const val ERROR_CANCELLED = 9
 
     // Disconnect reason discriminants — value of SessionEvent.disconnectReasonKind.
     const val DISCONNECT_REASON_LOCAL_CLOSE = 1

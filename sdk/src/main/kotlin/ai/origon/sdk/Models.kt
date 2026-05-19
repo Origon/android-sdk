@@ -174,6 +174,15 @@ data class ServerConfig(
 /**
  * Uploaded media descriptor. Surfaced on [Message.attachments] and
  * passed back into [SendMessagePayload.attachments].
+ *
+ * [localUrl] is an optional client-side preview URI (e.g. `content://`
+ * or `file://`) that the UI can keep displaying after a message is
+ * acknowledged. It is encoded on the Kotlin↔JNI boundary so the Rust
+ * SDK can stash it keyed by attachment id, and the same Rust SDK
+ * strips it from the wire (`skip_serializing`) before the server-bound
+ * POST. The value is then merged back onto the server-issued
+ * [Message] by id, so `MessageUpdated` carries `localUrl` through to
+ * the consumer's UI without the server ever seeing it.
  */
 @Serializable
 data class Attachment(
@@ -181,6 +190,22 @@ data class Attachment(
     val name: String = "",
     val contentType: String = "",
     val url: String = "",
+    val localUrl: String? = null,
+)
+
+/**
+ * Progress update emitted while [OrigonClient.uploadAttachment] is in
+ * flight.
+ *
+ * `totalBytes` may be `null` when the underlying transport doesn't
+ * report a content length (mirrors the `total = -1` sentinel from the
+ * native progress callback). `percent` is `null` in the same case.
+ */
+@Serializable
+data class UploadProgress(
+    val bytesUploaded: Long,
+    val totalBytes: Long? = null,
+    val percent: Int? = null,
 )
 
 /**
