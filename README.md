@@ -110,6 +110,43 @@ while (true) {
 client.close()
 ```
 
+### Microphone permission (required for voice calls)
+
+The SDK's manifest declares `RECORD_AUDIO`, so it merges into your app
+automatically — but `RECORD_AUDIO` is a **runtime ("dangerous")
+permission**. On Android 6+ (API 23+) the manifest declaration alone is
+not enough: **your app must request the grant at runtime before starting
+a voice session.** Without it, the SDK's audio-capture (AAudio input)
+stream fails to open — playback still works, but the call has no outgoing
+audio (the peer hears silence). This is the consumer app's
+responsibility, not the SDK's — the SDK has no `Activity` to drive the
+permission dialog.
+
+```kotlin
+// In an Activity / Fragment — request before calling startSession(VOICE).
+private val requestMic = registerForActivityResult(
+    ActivityResultContracts.RequestPermission()
+) { granted ->
+    if (granted) startVoiceCall() else showMicRequiredMessage()
+}
+
+private fun onCallButtonTapped() {
+    if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+        == PackageManager.PERMISSION_GRANTED
+    ) {
+        startVoiceCall()
+    } else {
+        requestMic.launch(Manifest.permission.RECORD_AUDIO)
+    }
+}
+```
+
+> Symptom if you skip this: logcat shows
+> `IAudioFlinger: createRecord returned error -1` and
+> `AAudioStreamBuilder_openStream() returns -896 = AAUDIO_ERROR_INTERNAL`,
+> followed by the SDK logging `audio device start failed, continuing
+> without audio`.
+
 ### Voice controls
 
 ```kotlin

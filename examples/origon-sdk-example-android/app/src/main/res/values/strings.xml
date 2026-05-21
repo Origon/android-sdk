@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Origon Example</string>
+
+    <!-- Endpoint screen -->
+    <string name="endpoint_title">Let’s Get Started</string>
+    <string name="endpoint_subtitle">Connect to an Origon endpoint to start chatting and calling.</string>
+    <string name="endpoint_hint">Enter endpoint URL</string>
+    <string name="endpoint_continue">Continue</string>
+    <string name="endpoint_empty_error">Please enter an endpoint URL</string>
+    <string name="endpoint_connect_failed">Failed to connect. Please try again.</string>
+
+    <!-- Chat -->
+    <string name="chat_empty_greeting">How can I help you?</string>
+    <string name="chat_input_hint">Type a message</string>
+    <string name="chat_session_history">Session history</string>
+    <string name="chat_new_session">New session</string>
+    <string name="chat_disconnected">Chat disconnected</string>
+
+    <!-- Attachments -->
+    <string name="attach_photo_library">Photo Library</string>
+    <string name="attach_camera">Camera</string>
+    <string name="attach_files">Files</string>
+    <string name="attach_remove">Remove attachment</string>
+
+    <!-- Sidebar -->
+    <string name="sidebar_change_endpoint">Change Endpoint</string>
+    <string name="sidebar_options">Options</string>
+    <string name="sidebar_untitled">Untitled</string>
+    <string name="group_today">TODAY</string>
+    <string name="group_yesterday">YESTERDAY</string>
+
+    <!-- Call -->
+    <string name="call_mic_required">Microphone permission is required for voice calls</string>
+    <string name="call_mute">Mute</string>
+    <string name="call_unmute">Unmute</string>
+    <string name="call_end">End call</string>
+
+    <!-- Retry / errors -->
+    <string name="retry">Retry</string>
+</resources>

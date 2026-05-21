@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="origon_accent">#EA580C</color>
+
+    <!-- Dark-mode palette. screenBackground is #111111 per the iOS app. -->
+    <color name="origon_screen_background">#111111</color>
+    <color name="origon_surface">#1C1C1E</color>
+    <color name="origon_text_primary">#FFFFFF</color>
+    <color name="origon_text_secondary">#99EBEBF5</color>
+    <color name="origon_text_tertiary">#4DEBEBF5</color>
+    <color name="origon_remote_bubble">#2C2C2E</color>
+    <color name="origon_border">#38383A</color>
+    <color name="origon_error">#FF453A</color>
+    <!-- Toast inverts in dark mode (white bg, dark text). -->
+    <color name="origon_toast_background">#FFFFFF</color>
+    <color name="origon_toast_foreground">#333333</color>
+</resources>

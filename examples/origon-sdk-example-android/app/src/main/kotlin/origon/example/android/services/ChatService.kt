@@ -1,0 +1,424 @@
+package origon.example.android.services
+
+import android.content.Context
+import android.net.Uri
+import ai.origon.sdk.Channel
+import ai.origon.sdk.ClientEvent
+import ai.origon.sdk.DisconnectReason
+import ai.origon.sdk.Message
+import ai.origon.sdk.SendMessagePayload
+import ai.origon.sdk.SessionException
+import ai.origon.sdk.StartSessionOptions
+import ai.origon.sdk.UploadProgress
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import origon.example.android.data.PendingAttachment
+import origon.example.android.util.SdkErrorKinds
+import java.util.UUID
+
+/**
+ * Owns in-memory chat state for every active chat session. Mirrors the
+ * iOS `ChatService`: multi-active by design, each open session keeps its
+ * own [SessionUIState]; the focused session's state is projected via the
+ * [messages] / [isTyping] / [pendingAttachments] flows the UI binds to.
+ */
+class ChatService(private val manager: SDKManager) {
+
+    data class SessionUIState(
+        val messages: List<Message> = emptyList(),
+        val isTyping: Boolean = false,
+        val pendingAttachments: List<PendingAttachment> = emptyList(),
+    )
+
+    private val sessionsState = MutableStateFlow<Map<String, SessionUIState>>(emptyMap())
+    private val _currentSessionId = MutableStateFlow<String?>(null)
+    val currentSessionId: StateFlow<String?> = _currentSessionId
+
+    /** Pending uploads queued before any chat session exists. */
+    private val draftPending = MutableStateFlow<List<PendingAttachment>>(emptyList())
+
+    /** Transient errors for the UI to toast. */
+    private val _error = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    val error: SharedFlow<String> = _error.asSharedFlow()
+
+    /** Serializes the lazy chat-session start so only one POST fires. */
+    private val startMutex = Mutex()
+
+    // MARK: - Focused-session projections
+
+    val messages: StateFlow<List<Message>> =
+        combine(sessionsState, _currentSessionId) { states, id ->
+            id?.let { states[it]?.messages } ?: emptyList()
+        }.stateIn(manager.scope, SharingStarted.Eagerly, emptyList())
+
+    val isTyping: StateFlow<Boolean> =
+        combine(sessionsState, _currentSessionId) { states, id ->
+            id?.let { states[it]?.isTyping } ?: false
+        }.stateIn(manager.scope, SharingStarted.Eagerly, false)
+
+    val pendingAttachments: StateFlow<List<PendingAttachment>> =
+        combine(sessionsState, _currentSessionId, draftPending) { states, id, draft ->
+            if (id != null) states[id]?.pendingAttachments ?: emptyList() else draft
+        }.stateIn(manager.scope, SharingStarted.Eagerly, emptyList())
+
+    val hasUploadingAttachments: Boolean
+        get() = pendingAttachments.value.any { it.status == PendingAttachment.Status.UPLOADING }
+
+    init {
+        manager.scope.launch {
+            manager.events.collect { handleEvent(it) }
+        }
+    }
+
+    // MARK: - Session lifecycle
+
+    /**
+     * Focus a chat session. `null` switches to the empty "new session"
+     * state. A non-nil id either focuses existing in-memory state, or
+     * fetches history + opens the SDK chat channel for that id.
+     */
+    suspend fun openSession(id: String?) {
+        if (id == null) {
+            _currentSessionId.value = null
+            return
+        }
+        if (sessionsState.value[id] != null) {
+            _currentSessionId.value = id
+            return
+        }
+        val client = manager.client ?: return
+        try {
+            val history = withContext(Dispatchers.IO) { client.getSession(id) }
+            val response = withContext(Dispatchers.IO) {
+                client.startSession(StartSessionOptions(channel = Channel.CHAT, sessionId = id))
+            }
+            sessionsState.update { it + (response.sessionId to SessionUIState(messages = history.history)) }
+            _currentSessionId.value = response.sessionId
+            runCatching { manager.getSessions() }
+        } catch (e: Throwable) {
+            _error.tryEmit("Failed to open session: ${e.message}")
+        }
+    }
+
+    /**
+     * Send a text message + completed attachments on the focused session.
+     * Lazily opens a fresh chat session on the first send when there is
+     * none. Does not mutate [messages] directly — the SDK fires
+     * MessageAdded / MessageUpdated which [handleEvent] applies.
+     */
+    suspend fun sendMessage(text: String) {
+        val trimmed = text.trim()
+        try {
+            val id = ensureChatSession()
+            val completed = (sessionsState.value[id]?.pendingAttachments ?: emptyList())
+                .mapNotNull { if (it.status == PendingAttachment.Status.COMPLETED) it.attachment else null }
+            if (trimmed.isEmpty() && completed.isEmpty()) return
+            val client = manager.client ?: return
+
+            val payload = SendMessagePayload(
+                text = trimmed.ifEmpty { null },
+                attachments = completed,
+            )
+            withContext(Dispatchers.IO) { client.sendMessage(id, payload) }
+
+            // Completed attachments now belong to the sent message.
+            sessionsState.update { states ->
+                val s = states[id] ?: return@update states
+                states + (id to s.copy(
+                    pendingAttachments = s.pendingAttachments.filter {
+                        it.status != PendingAttachment.Status.COMPLETED
+                    }
+                ))
+            }
+        } catch (e: Throwable) {
+            _error.tryEmit(e.message ?: "Failed to send")
+        }
+    }
+
+    /** Notify the peer the user is typing. Cheap to call; SDK debounces. */
+    fun notifyTyping() {
+        val client = manager.client ?: return
+        val id = _currentSessionId.value ?: return
+        runCatching { client.notifyTyping(id) }
+    }
+
+    /** Force outbound typing off — input went empty. */
+    fun stopTyping() {
+        val client = manager.client ?: return
+        val id = _currentSessionId.value ?: return
+        runCatching { client.stopTyping(id) }
+    }
+
+    /** End the focused chat session and drop its UI state. */
+    fun endCurrentSession() {
+        val id = _currentSessionId.value ?: return
+        manager.client?.let { runCatching { it.endSession(id) } }
+        sessionsState.update { it - id }
+        _currentSessionId.value = null
+    }
+
+    // MARK: - Attachments
+
+    /**
+     * Queue a file upload onto the focused session (or the draft list
+     * when no session is open yet). The tile appears immediately at
+     * progress 0; live updates land via [onProgress]. [context] is used
+     * by the SDK to copy the content:// uri into cacheDir before upload.
+     */
+    fun uploadFile(context: Context, uri: Uri, fileName: String, contentType: String) {
+        val localId = UUID.randomUUID().toString()
+        val pending = PendingAttachment(
+            id = localId,
+            fileName = fileName,
+            contentType = contentType,
+            previewUri = if (contentType.startsWith("image/")) uri else null,
+            status = PendingAttachment.Status.UPLOADING,
+            progress = 0,
+        )
+        appendPending(pending)
+        manager.scope.launch { runUpload(context, localId, uri, fileName) }
+    }
+
+    fun removePendingAttachment(id: String) {
+        var removed: PendingAttachment? = null
+        var hostSessionId: String? = null
+
+        // Search the draft list first, then every session's pending list.
+        draftPending.value.firstOrNull { it.id == id }?.let { row ->
+            removed = row
+            draftPending.update { list -> list.filter { it.id != id } }
+        }
+        if (removed == null) {
+            for ((sid, state) in sessionsState.value) {
+                val row = state.pendingAttachments.firstOrNull { it.id == id } ?: continue
+                removed = row
+                hostSessionId = sid
+                sessionsState.update { states ->
+                    val s = states[sid] ?: return@update states
+                    states + (sid to s.copy(
+                        pendingAttachments = s.pendingAttachments.filter { it.id != id }
+                    ))
+                }
+                break
+            }
+        }
+
+        val row = removed ?: return
+        val client = manager.client ?: return
+        when (row.status) {
+            PendingAttachment.Status.UPLOADING -> {
+                val sid = hostSessionId ?: return
+                // deleteAttachment matches the local id against the SDK's
+                // in-flight upload table and cancels it.
+                manager.scope.launch {
+                    runCatching { client.deleteAttachment(sid, id) }
+                }
+            }
+            PendingAttachment.Status.COMPLETED -> {
+                val sid = hostSessionId ?: return
+                val serverId = row.attachment?.id ?: return
+                manager.scope.launch {
+                    runCatching { client.deleteAttachment(sid, serverId) }
+                }
+            }
+            PendingAttachment.Status.ERROR -> Unit // local remove only
+        }
+    }
+
+    // MARK: - Teardown
+
+    /** End every active chat session and clear UI state. Called on logout. */
+    fun destroy() {
+        manager.client?.let { client ->
+            for (id in sessionsState.value.keys) runCatching { client.endSession(id) }
+        }
+        sessionsState.value = emptyMap()
+        _currentSessionId.value = null
+        draftPending.value = emptyList()
+    }
+
+    // MARK: - Event handling
+
+    private fun handleEvent(event: ClientEvent) {
+        val sid = event.sessionId
+
+        // sessionUpdated may arrive for an id we don't hold state for yet.
+        if (event is ClientEvent.SessionUpdated) {
+            val state = sessionsState.value[sid] ?: return
+            sessionsState.update { (it - sid) + (event.newSessionId to state) }
+            if (_currentSessionId.value == sid) _currentSessionId.value = event.newSessionId
+            return
+        }
+
+        // Filter everything else to sessions we own (drops voice events).
+        if (sessionsState.value[sid] == null) return
+
+        when (event) {
+            is ClientEvent.MessageAdded -> sessionsState.update { states ->
+                val s = states[sid] ?: return@update states
+                states + (sid to s.copy(messages = s.messages + event.message))
+            }
+            is ClientEvent.MessageUpdated -> updateMessage(sid, event.id, event.message)
+            is ClientEvent.Typing -> sessionsState.update { states ->
+                val s = states[sid] ?: return@update states
+                states + (sid to s.copy(isTyping = event.isTyping))
+            }
+            is ClientEvent.Disconnected -> {
+                if (event.reason !is DisconnectReason.LocalClose) {
+                    if (sid == _currentSessionId.value) _error.tryEmit("Chat disconnected")
+                    sessionsState.update { it - sid }
+                    if (_currentSessionId.value == sid) _currentSessionId.value = null
+                }
+            }
+            else -> Unit
+        }
+    }
+
+    private fun updateMessage(sid: String, key: String, message: Message) {
+        sessionsState.update { states ->
+            val s = states[sid] ?: return@update states
+            val idx = s.messages.indexOfFirst { messageKey(it) == key }
+            val newMessages = if (idx >= 0) {
+                s.messages.toMutableList().also { it[idx] = message }
+            } else {
+                s.messages + message
+            }
+            states + (sid to s.copy(messages = newMessages))
+        }
+    }
+
+    // Outbound rows first appear with localId set and id == ""; the server
+    // id lands on MessageUpdated. Prefer localId so the row tracks across
+    // sending → delivered. Inbound rows have no localId, so id wins.
+    private fun messageKey(m: Message): String =
+        m.localId?.takeIf { it.isNotEmpty() } ?: m.id
+
+    // MARK: - Upload internals
+
+    private suspend fun ensureChatSession(): String {
+        _currentSessionId.value?.let { return it }
+        return startMutex.withLock {
+            _currentSessionId.value?.let { return@withLock it }
+            val client = manager.client ?: throw IllegalStateException("SDK not initialized")
+            val response = withContext(Dispatchers.IO) {
+                client.startSession(StartSessionOptions(channel = Channel.CHAT, sessionId = null))
+            }
+            val newId = response.sessionId
+            // Merge any draft tiles queued while the start was in flight.
+            sessionsState.update { states ->
+                val existing = states[newId] ?: SessionUIState()
+                states + (newId to existing.copy(
+                    pendingAttachments = existing.pendingAttachments + draftPending.value
+                ))
+            }
+            draftPending.value = emptyList()
+            if (_currentSessionId.value == null) _currentSessionId.value = newId
+            manager.scope.launch { runCatching { manager.getSessions() } }
+            newId
+        }
+    }
+
+    private suspend fun runUpload(context: Context, localId: String, uri: Uri, fileName: String) {
+        val client = manager.client ?: run {
+            updatePending(localId) { it.copy(status = PendingAttachment.Status.ERROR, errorText = "Client not ready") }
+            return
+        }
+        val sid = try {
+            ensureChatSession()
+        } catch (e: Throwable) {
+            updatePending(localId) { it.copy(status = PendingAttachment.Status.ERROR, errorText = "Couldn't start chat session") }
+            return
+        }
+
+        // If the user removed the tile while we waited for the session, abort.
+        if (!pendingExists(localId)) return
+
+        try {
+            val attachment = client.uploadAttachment(
+                sessionId = sid,
+                context = context,
+                uri = uri,
+                fileName = fileName,
+                uploadId = localId,
+                onProgress = { progress: UploadProgress ->
+                    updatePending(localId) { row ->
+                        val pct = progress.percent
+                            ?: progress.totalBytes?.takeIf { it > 0 }?.let {
+                                (progress.bytesUploaded * 100 / it).toInt()
+                            }
+                        if (pct != null) row.copy(progress = pct.coerceIn(0, 100)) else row
+                    }
+                },
+            )
+            updatePending(localId) {
+                it.copy(status = PendingAttachment.Status.COMPLETED, progress = 100, attachment = attachment)
+            }
+        } catch (e: SessionException) {
+            // The SDK's ERROR_* constants live on the internal SessionBridge,
+            // so we mirror the cancelled discriminant locally. A cancel means
+            // the user removed the tile mid-upload — nothing left to do.
+            if (e.kind == SdkErrorKinds.CANCELLED) return
+            val message = e.message ?: e.code ?: "Upload failed"
+            updatePending(localId) { it.copy(status = PendingAttachment.Status.ERROR, errorText = message) }
+            _error.tryEmit(message)
+        } catch (e: Throwable) {
+            val message = e.message ?: "Upload failed"
+            updatePending(localId) { it.copy(status = PendingAttachment.Status.ERROR, errorText = message) }
+            _error.tryEmit(message)
+        }
+    }
+
+    private fun pendingExists(localId: String): Boolean {
+        if (draftPending.value.any { it.id == localId }) return true
+        return sessionsState.value.values.any { state ->
+            state.pendingAttachments.any { it.id == localId }
+        }
+    }
+
+    private fun appendPending(row: PendingAttachment) {
+        val id = _currentSessionId.value
+        if (id != null) {
+            sessionsState.update { states ->
+                val s = states[id] ?: SessionUIState()
+                states + (id to s.copy(pendingAttachments = s.pendingAttachments + row))
+            }
+        } else {
+            draftPending.update { it + row }
+        }
+    }
+
+    private fun updatePending(localId: String, mutate: (PendingAttachment) -> PendingAttachment) {
+        // Draft list first.
+        if (draftPending.value.any { it.id == localId }) {
+            draftPending.update { list -> list.map { if (it.id == localId) mutate(it) else it } }
+            return
+        }
+        // Then every session's pending list.
+        sessionsState.update { states ->
+            var changed = false
+            val newStates = states.mapValues { (_, state) ->
+                if (state.pendingAttachments.any { it.id == localId }) {
+                    changed = true
+                    state.copy(pendingAttachments = state.pendingAttachments.map {
+                        if (it.id == localId) mutate(it) else it
+                    })
+                } else {
+                    state
+                }
+            }
+            if (changed) newStates else states
+        }
+    }
+}

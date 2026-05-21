@@ -1,0 +1,12 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+# Matches build/ at any depth (root build/ and app/build/).
+build/
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.aab
