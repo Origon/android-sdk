@@ -5,28 +5,24 @@ session management.
 
 ## Requirements
 
-- Android API 24+ (Android 7.0)
+- Android API 26+ (Android 8.0 Oreo)
+
+  The SDK links AAudio (`libaaudio.so`), which was introduced in API 26.
+  Apps with a lower `minSdk` can still consume the SDK — see
+  [Consumers with `minSdk` < 26](#consumers-with-minsdk--26) below.
 
 ## Installation
 
 ### 1. Add the repository
 
-In your project's `settings.gradle.kts`:
+The SDK is published to [Maven Central](https://central.sonatype.com/artifact/ai.origon/sdk).
+No authentication is required.
 
 ```kotlin
 dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven {
-            url = uri("https://maven.pkg.github.com/Origon/android-sdk")
-            credentials {
-                username = providers.gradleProperty("gpr.user").orNull
-                    ?: System.getenv("GITHUB_ACTOR")
-                password = providers.gradleProperty("gpr.token").orNull
-                    ?: System.getenv("GITHUB_TOKEN")
-            }
-        }
     }
 }
 ```
@@ -37,9 +33,45 @@ In your app's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("ai.origon:sdk:0.2.0")
+    implementation("ai.origon:sdk:0.1.0-alpha.1")
 }
 ```
+
+### Consumers with `minSdk` < 26
+
+If your app targets a lower `minSdk` (e.g. 23), the manifest merger will
+fail with a `minSdkVersion 23 cannot be smaller than version 26 declared
+in library` error. Two steps to integrate:
+
+1. **Override the SDK's `minSdk` declaration** in your app's
+   `AndroidManifest.xml`:
+
+   ```xml
+   <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+             xmlns:tools="http://schemas.android.com/tools">
+       <uses-sdk tools:overrideLibrary="ai.origon.sdk" />
+       ...
+   </manifest>
+   ```
+
+2. **Runtime-gate SDK usage** so it's only initialized / called on
+   devices with sufficient OS support:
+
+   ```kotlin
+   import android.os.Build
+
+   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+       val client = OrigonClient(context, ClientConfig(...))
+       // ... use the SDK
+   } else {
+       // Hide / disable Origon features on Android < 8.0
+   }
+   ```
+
+   On API 23-25 devices, `System.loadLibrary` for the SDK's native
+   library will fail because `libaaudio.so` is not present. The runtime
+   gate must keep `OrigonClient` from being instantiated on those
+   devices.
 
 ## Quick Start
 

@@ -12,7 +12,12 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        minSdk = 24
+        // API 26 (Android 8.0) is required because the native library
+        // links AAudio (libaaudio.so), introduced in API 26.
+        // Consumer apps with a lower minSdk must add
+        // `tools:overrideLibrary="ai.origon.sdk"` to their <uses-sdk>
+        // element and runtime-gate SDK usage on Build.VERSION.SDK_INT.
+        minSdk = 26
 
         consumerProguardFiles("consumer-rules.pro")
     }
