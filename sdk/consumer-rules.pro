@@ -38,6 +38,12 @@
 -keep class ai.origon.sdk.bridge.** { *; }
 -keepclassmembers class ai.origon.sdk.bridge.** { *; }
 
+# AAudio device-change helpers — Rust resolves them by name, reads their
+# `mNativePtr` field, binds their native methods, and the framework calls
+# their AudioDeviceCallback / OnCommunicationDeviceChangedListener overrides.
+-keep class ai.origon.sdk.RustAudioDeviceCallback { *; }
+-keep class ai.origon.sdk.RustCommDeviceListener { *; }
+
 # Keep all native methods.
 -keepclasseswithmembernames class * {
     native <methods>;
