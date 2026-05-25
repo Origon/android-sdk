@@ -17,8 +17,7 @@ ported to Android Views + Kotlin coroutines.
 - Android Studio (Koala or newer) **or** the command-line path below
 - JDK 17–21 (AGP 8.7 does not support JDK 22+)
 - Android SDK Platform 35 + build-tools 35
-- A device or emulator on **API 26+** (Android 8.0). The SDK links AAudio,
-  which requires API 26.
+- A device or emulator on **API 23+** (Android 6.0).
 
 ## Getting started
 
@@ -89,13 +88,6 @@ Two extra notes for SDK consumers (both are worked around in this example):
 - **Microphone** (`RECORD_AUDIO`) — voice calls
 - **Camera** (`CAMERA`) — declared for completeness
 - **Media/storage reads** — attachment picking
-
-## Consuming from an app with `minSdk < 26`
-
-This example targets `minSdk 26` to match the SDK. If your app targets a
-lower `minSdk`, see the integration note in the SDK README
-(`android-sdk/README.md`) — add `tools:overrideLibrary="ai.origon.sdk"` and
-runtime-gate SDK usage on `Build.VERSION.SDK_INT >= O`.
 
 ## Scope notes
 

@@ -17,7 +17,7 @@ import android.media.AudioDeviceInfo
  * so it loads on every supported API level. The API-31 communication
  * device listener lives in a separate class ([RustCommDeviceListener]) so
  * that referencing the API-31 interface never blocks this class from
- * loading on API 26–30.
+ * loading on API 23–30.
  *
  * Rust clears [mNativePtr] back to 0 on teardown; the guarded calls below
  * then become no-ops. Do NOT rename/move without updating the matching

@@ -12,12 +12,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        // API 26 (Android 8.0) is required because the native library
-        // links AAudio (libaaudio.so), introduced in API 26.
-        // Consumer apps with a lower minSdk must add
-        // `tools:overrideLibrary="ai.origon.sdk"` to their <uses-sdk>
-        // element and runtime-gate SDK usage on Build.VERSION.SDK_INT.
-        minSdk = 26
+        // API 23 (Android 6.0). The native audio backend uses Oboe, which
+        // selects AAudio on API 27+ and OpenSL ES on 23-26 at runtime, and the
+        // device monitor uses AudioManager enumeration/change-callback APIs that
+        // are available from API 23.
+        minSdk = 23
 
         consumerProguardFiles("consumer-rules.pro")
     }

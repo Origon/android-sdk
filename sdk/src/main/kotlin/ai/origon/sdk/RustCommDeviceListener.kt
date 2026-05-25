@@ -10,7 +10,7 @@ import android.media.AudioManager
  * [AudioManager.OnCommunicationDeviceChangedListener] was added in API 31,
  * so this class is kept SEPARATE from [RustAudioDeviceCallback]: the
  * native side only ever looks it up / instantiates it when
- * `Build.VERSION.SDK_INT >= 31`. On API 26–30 the class is never loaded,
+ * `Build.VERSION.SDK_INT >= 31`. On API 23–30 the class is never loaded,
  * so referencing the API-31 interface here can't trigger a
  * `NoClassDefFoundError`.
  *

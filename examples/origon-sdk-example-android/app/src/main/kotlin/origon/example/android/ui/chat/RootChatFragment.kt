@@ -60,7 +60,7 @@ class RootChatFragment : Fragment(R.layout.fragment_root_chat) {
     ) { uri -> uri?.let { enqueueUpload(it) } }
 
     // RECORD_AUDIO is a runtime ("dangerous") permission — the manifest
-    // declaration is not enough. A voice call's mic capture (AAudio input)
+    // declaration is not enough. A voice call's mic capture (the input)
     // fails without it, so the app must request the grant before starting
     // a call. This is the consumer's responsibility, not the SDK's.
     private val requestMic = registerForActivityResult(
@@ -292,7 +292,7 @@ class RootChatFragment : Fragment(R.layout.fragment_root_chat) {
     private fun startCall() {
         hideKeyboard()
         // Gate the call on the mic permission. Without RECORD_AUDIO granted,
-        // the SDK's AAudio input stream fails to open and the call has no
+        // the SDK's input stream fails to open and the call has no
         // outgoing audio.
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED

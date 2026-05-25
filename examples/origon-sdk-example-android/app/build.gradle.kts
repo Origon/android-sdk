@@ -9,8 +9,8 @@ android {
 
     defaultConfig {
         applicationId = "origon.example.android"
-        // Matches the SDK's minSdk (the native lib links AAudio, API 26+).
-        minSdk = 26
+        // Matches the SDK's minSdk (Android 6.0).
+        minSdk = 23
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0-alpha.1"

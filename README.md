@@ -5,11 +5,11 @@ session management.
 
 ## Requirements
 
-- Android API 26+ (Android 8.0 Oreo)
+- Android API 23+ (Android 6.0 Marshmallow)
 
-  The SDK links AAudio (`libaaudio.so`), which was introduced in API 26.
-  Apps with a lower `minSdk` can still consume the SDK — see
-  [Consumers with `minSdk` < 26](#consumers-with-minsdk--26) below.
+  The native audio backend uses [Oboe](https://github.com/google/oboe),
+  which selects AAudio on API 27+ and OpenSL ES on API 23-26 at runtime.
+  No special integration is required on any supported API level.
 
 ## Installation
 
@@ -36,42 +36,6 @@ dependencies {
     implementation("ai.origon:sdk:0.1.0-alpha.1")
 }
 ```
-
-### Consumers with `minSdk` < 26
-
-If your app targets a lower `minSdk` (e.g. 23), the manifest merger will
-fail with a `minSdkVersion 23 cannot be smaller than version 26 declared
-in library` error. Two steps to integrate:
-
-1. **Override the SDK's `minSdk` declaration** in your app's
-   `AndroidManifest.xml`:
-
-   ```xml
-   <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-             xmlns:tools="http://schemas.android.com/tools">
-       <uses-sdk tools:overrideLibrary="ai.origon.sdk" />
-       ...
-   </manifest>
-   ```
-
-2. **Runtime-gate SDK usage** so it's only initialized / called on
-   devices with sufficient OS support:
-
-   ```kotlin
-   import android.os.Build
-
-   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-       val client = OrigonClient(context, ClientConfig(...))
-       // ... use the SDK
-   } else {
-       // Hide / disable Origon features on Android < 8.0
-   }
-   ```
-
-   On API 23-25 devices, `System.loadLibrary` for the SDK's native
-   library will fail because `libaaudio.so` is not present. The runtime
-   gate must keep `OrigonClient` from being instantiated on those
-   devices.
 
 ## Quick Start
 
@@ -116,7 +80,7 @@ The SDK's manifest declares `RECORD_AUDIO`, so it merges into your app
 automatically — but `RECORD_AUDIO` is a **runtime ("dangerous")
 permission**. On Android 6+ (API 23+) the manifest declaration alone is
 not enough: **your app must request the grant at runtime before starting
-a voice session.** Without it, the SDK's audio-capture (AAudio input)
+a voice session.** Without it, the SDK's audio-capture (the input)
 stream fails to open — playback still works, but the call has no outgoing
 audio (the peer hears silence). This is the consumer app's
 responsibility, not the SDK's — the SDK has no `Activity` to drive the
@@ -141,11 +105,9 @@ private fun onCallButtonTapped() {
 }
 ```
 
-> Symptom if you skip this: logcat shows
-> `IAudioFlinger: createRecord returned error -1` and
-> `AAudioStreamBuilder_openStream() returns -896 = AAUDIO_ERROR_INTERNAL`,
-> followed by the SDK logging `audio device start failed, continuing
-> without audio`.
+> Symptom if you skip this: logcat shows the capture stream failing to
+> open (e.g. `IAudioFlinger: createRecord returned error -1`), followed by
+> the SDK logging `audio device start failed, continuing without audio`.
 
 ### Voice controls
 
