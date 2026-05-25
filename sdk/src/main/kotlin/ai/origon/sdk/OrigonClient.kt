@@ -23,9 +23,11 @@ class OrigonClient(
     config: ClientConfig,
 ) : AutoCloseable {
 
+    private val appContext: android.content.Context = context.applicationContext
+
     private val handle: Long = SessionBridge.initialize(
         endpoint = config.endpoint,
-        bundleId = context.applicationContext.packageName,
+        bundleId = appContext.packageName,
         token = config.token,
         userId = config.userId,
         platform = config.platform.toBridge(),
@@ -326,13 +328,12 @@ class OrigonClient(
 
     /**
      * Convenience overload that copies a [content://] (or `file://` /
-     * `android.resource://`) [uri] into `context.cacheDir` before
+     * `android.resource://`) [uri] into the app's cache dir before
      * uploading, then deletes the cache file once the upload settles.
      * The SDK can't open `content://` URIs directly.
      */
     suspend fun uploadAttachment(
         sessionId: String,
-        context: android.content.Context,
         uri: android.net.Uri,
         fileName: String,
         uploadId: String = UUID.randomUUID().toString(),
@@ -342,8 +343,8 @@ class OrigonClient(
         val tempFile = withContext(Dispatchers.IO) {
             val ext = fileName.substringAfterLast('.', missingDelimiterValue = "")
             val suffix = if (ext.isEmpty()) "" else ".$ext"
-            val out = java.io.File.createTempFile("upload-", suffix, context.cacheDir)
-            context.contentResolver.openInputStream(uri)?.use { input ->
+            val out = java.io.File.createTempFile("upload-", suffix, appContext.cacheDir)
+            appContext.contentResolver.openInputStream(uri)?.use { input ->
                 out.outputStream().use { output -> input.copyTo(output) }
             } ?: throw SessionException(
                 SessionBridge.ERROR_OTHER,
@@ -367,13 +368,11 @@ class OrigonClient(
     }
 
     /**
-     * Convenience overload for in-memory [bytes]: writes them to
-     * `context.cacheDir` first, then delegates to the path-based
-     * overload.
+     * Convenience overload for in-memory [bytes]: writes them to the
+     * app's cache dir first, then delegates to the path-based overload.
      */
     suspend fun uploadAttachment(
         sessionId: String,
-        context: android.content.Context,
         bytes: ByteArray,
         fileName: String,
         uploadId: String = UUID.randomUUID().toString(),
@@ -383,7 +382,7 @@ class OrigonClient(
         val tempFile = withContext(Dispatchers.IO) {
             val ext = fileName.substringAfterLast('.', missingDelimiterValue = "")
             val suffix = if (ext.isEmpty()) "" else ".$ext"
-            val out = java.io.File.createTempFile("upload-", suffix, context.cacheDir)
+            val out = java.io.File.createTempFile("upload-", suffix, appContext.cacheDir)
             out.outputStream().use { it.write(bytes) }
             out
         }

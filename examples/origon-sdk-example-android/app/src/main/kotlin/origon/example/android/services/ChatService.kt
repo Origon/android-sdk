@@ -1,6 +1,5 @@
 package origon.example.android.services
 
-import android.content.Context
 import android.net.Uri
 import ai.origon.sdk.Channel
 import ai.origon.sdk.ClientEvent
@@ -174,10 +173,9 @@ class ChatService(private val manager: SDKManager) {
     /**
      * Queue a file upload onto the focused session (or the draft list
      * when no session is open yet). The tile appears immediately at
-     * progress 0; live updates land via [onProgress]. [context] is used
-     * by the SDK to copy the content:// uri into cacheDir before upload.
+     * progress 0; live updates land via the SDK's progress callback.
      */
-    fun uploadFile(context: Context, uri: Uri, fileName: String, contentType: String) {
+    fun uploadFile(uri: Uri, fileName: String, contentType: String) {
         val localId = UUID.randomUUID().toString()
         val pending = PendingAttachment(
             id = localId,
@@ -188,7 +186,7 @@ class ChatService(private val manager: SDKManager) {
             progress = 0,
         )
         appendPending(pending)
-        manager.scope.launch { runUpload(context, localId, uri, fileName) }
+        manager.scope.launch { runUpload(localId, uri, fileName) }
     }
 
     fun removePendingAttachment(id: String) {
@@ -330,7 +328,7 @@ class ChatService(private val manager: SDKManager) {
         }
     }
 
-    private suspend fun runUpload(context: Context, localId: String, uri: Uri, fileName: String) {
+    private suspend fun runUpload(localId: String, uri: Uri, fileName: String) {
         val client = manager.client ?: run {
             updatePending(localId) { it.copy(status = PendingAttachment.Status.ERROR, errorText = "Client not ready") }
             return
@@ -348,7 +346,6 @@ class ChatService(private val manager: SDKManager) {
         try {
             val attachment = client.uploadAttachment(
                 sessionId = sid,
-                context = context,
                 uri = uri,
                 fileName = fileName,
                 uploadId = localId,

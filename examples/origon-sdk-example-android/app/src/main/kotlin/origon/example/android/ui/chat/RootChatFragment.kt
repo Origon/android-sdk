@@ -343,7 +343,7 @@ class RootChatFragment : Fragment(R.layout.fragment_root_chat) {
 
     private fun enqueueUpload(uri: Uri) {
         val (name, type) = queryFileInfo(uri)
-        chat.uploadFile(requireContext().applicationContext, uri, name, type)
+        chat.uploadFile(uri, name, type)
     }
 
     private fun queryFileInfo(uri: Uri): Pair<String, String> {
