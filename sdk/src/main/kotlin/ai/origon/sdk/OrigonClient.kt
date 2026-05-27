@@ -221,18 +221,6 @@ class OrigonClient(
         SessionBridge.setMuteAll(handle, muted)
     }
 
-    /** Returns the new hold state. */
-    fun toggleHold(id: String): Boolean {
-        ensureOpen()
-        return SessionBridge.toggleHold(handle, id)
-    }
-
-    /** `digit` must be one of `0-9`, `*`, `#`, `A-D` per RFC 4733. */
-    fun sendDtmf(id: String, digit: Char, durationMs: Int) {
-        ensureOpen()
-        SessionBridge.sendDtmf(handle, id, digit, durationMs)
-    }
-
     // ── Chat ─────────────────────────────────────────────────────────
 
     /**

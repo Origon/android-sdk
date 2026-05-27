@@ -113,8 +113,6 @@ private fun onCallButtonTapped() {
 
 ```kotlin
 client.setMute(id = response.sessionId, muted = true)
-val onHold = client.toggleHold(id = response.sessionId)
-client.sendDtmf(id = response.sessionId, digit = '5', durationMs = 100)
 ```
 
 ### Multiple sessions
@@ -193,8 +191,6 @@ while (true) {
 | `joinSession(input)` | Attach to a previously-obtained `StartSessionResponse`. |
 | `endSession(id)` / `endAllSessions()` | Close a single / every session. |
 | `setMute(id, muted)` / `setMuteAll(muted)` | Voice — absolute mute. |
-| `toggleHold(id)` | Voice — toggle hold. Returns the new state. |
-| `sendDtmf(id, digit, durationMs)` | Voice — send a DTMF digit per RFC 4733. |
 | `sendMessage(id, payload)` | Chat — POST `<sessionUrl>/message`. Returns the server-issued `Message`. Fires `MessageAdded` then `MessageUpdated`. |
 | `notifyTyping(id)` | Chat — register a keystroke; SDK debounces outbound `/typing` POSTs. |
 | `stopTyping(id)` | Chat — force outbound typing state to "off" immediately. |

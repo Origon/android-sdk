@@ -126,8 +126,6 @@ internal object SessionBridge {
 
     @JvmStatic external fun setMute(handle: Long, id: String, muted: Boolean)
     @JvmStatic external fun setMuteAll(handle: Long, muted: Boolean)
-    @JvmStatic external fun toggleHold(handle: Long, id: String): Boolean
-    @JvmStatic external fun sendDtmf(handle: Long, id: String, digit: Char, durationMs: Int)
 
     // ── Chat ─────────────────────────────────────────────────────────
 
