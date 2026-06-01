@@ -160,6 +160,21 @@ class OrigonClient(
 
     // ── Session lifecycle ────────────────────────────────────────────
 
+    /**
+     * Open a session and return its [StartSessionResponse]
+     * `(sessionId, url, token)`.
+     *
+     * **Returning does not mean the media plane is connected.** For a
+     * [Channel.VOICE] session the MoQ dial runs in the background after
+     * this returns: connect success arrives as a `ClientEvent.Connected`
+     * and a dial failure as a `ClientEvent.Disconnected` (`TransportClosed`)
+     * on the event stream — *not* as a thrown [SessionException]. Calling
+     * [endSession] with the returned id while still dialing cancels the
+     * in-flight dial. A [Channel.CHAT] session completes its (quick) SSE
+     * dial before returning and still throws on SSE-dial failure. Throws
+     * only for the `/session/start` HTTP failure, a chat SSE-dial failure,
+     * or a malformed request.
+     */
     fun startSession(options: StartSessionOptions): StartSessionResponse {
         ensureOpen()
         val raw = SessionBridge.startSession(
@@ -178,6 +193,11 @@ class OrigonClient(
     /**
      * Attach to a session whose [StartSessionResponse] was obtained out
      * of band (multi-device handoff, deeplink, persisted session).
+     *
+     * Like [startSession], a [Channel.VOICE] session dials MoQ in the
+     * background — returning here does not mean it is connected; await the
+     * `Connected` / `Disconnected` event. A [Channel.CHAT] session
+     * completes its SSE dial before returning.
      */
     fun joinSession(input: JoinSessionInput) {
         ensureOpen()
