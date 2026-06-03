@@ -34,6 +34,8 @@
     <string name="call_mic_required">Microphone permission is required for voice calls</string>
     <string name="call_mute">Mute</string>
     <string name="call_unmute">Unmute</string>
+    <string name="call_speaker">Turn on speaker</string>
+    <string name="call_speaker_off">Turn off speaker</string>
     <string name="call_end">End call</string>
 
     <!-- Retry / errors -->

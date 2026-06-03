@@ -92,6 +92,36 @@ enum class Platform {
     }
 }
 
+/**
+ * Audio output route override for a voice call — the "speakerphone" concept,
+ * distinct from device selection. Android applies it via `AudioManager`
+ * (speakerphone / Bluetooth SCO). Higher-level UI typically wraps this as a
+ * boolean speaker toggle ([SPEAKER] / [AUTOMATIC]).
+ */
+enum class AudioOutputRoute {
+    /** System default — earpiece, or wired/Bluetooth when present. */
+    AUTOMATIC,
+    /** Built-in loudspeaker (speakerphone). */
+    SPEAKER,
+    /** Bluetooth hands-free (SCO). */
+    BLUETOOTH;
+
+    internal fun toBridge(): Int = when (this) {
+        AUTOMATIC -> SessionBridge.AUDIO_OUTPUT_DEFAULT
+        SPEAKER -> SessionBridge.AUDIO_OUTPUT_SPEAKER
+        BLUETOOTH -> SessionBridge.AUDIO_OUTPUT_BLUETOOTH
+    }
+
+    internal companion object {
+        /** Map a bridge `AUDIO_OUTPUT_*` int back to a route; unknown → [AUTOMATIC]. */
+        fun fromBridge(value: Int): AudioOutputRoute = when (value) {
+            SessionBridge.AUDIO_OUTPUT_SPEAKER -> SPEAKER
+            SessionBridge.AUDIO_OUTPUT_BLUETOOTH -> BLUETOOTH
+            else -> AUTOMATIC
+        }
+    }
+}
+
 // ── Configuration / requests ─────────────────────────────────────────
 
 data class ClientConfig(
@@ -396,5 +426,15 @@ sealed class ClientEvent {
     data class CallError(
         override val sessionId: String,
         val message: String?,
+    ) : ClientEvent()
+
+    /**
+     * The audio output route changed — the app's [OrigonClient.setAudioOutput]
+     * choice or an OS-driven change (e.g. a headset plugged in mid-call). Drive
+     * a speaker toggle from `route == AudioOutputRoute.SPEAKER`.
+     */
+    data class AudioRouteChanged(
+        override val sessionId: String,
+        val route: AudioOutputRoute,
     ) : ClientEvent()
 }

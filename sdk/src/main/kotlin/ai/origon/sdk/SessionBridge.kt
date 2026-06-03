@@ -127,6 +127,9 @@ internal object SessionBridge {
     @JvmStatic external fun setMute(handle: Long, id: String, muted: Boolean)
     @JvmStatic external fun setMuteAll(handle: Long, muted: Boolean)
 
+    /** Override the audio output route. [route] is one of `AUDIO_OUTPUT_*`. */
+    @JvmStatic external fun setAudioOutput(handle: Long, route: Int)
+
     // ── Chat ─────────────────────────────────────────────────────────
 
     /**
@@ -235,6 +238,11 @@ internal object SessionBridge {
     const val CHANNEL_CHAT = 0
     const val CHANNEL_VOICE = 1
 
+    // Audio output route — see SessionBridge.setAudioOutput(route: Int).
+    const val AUDIO_OUTPUT_DEFAULT = 0
+    const val AUDIO_OUTPUT_SPEAKER = 1
+    const val AUDIO_OUTPUT_BLUETOOTH = 2
+
     // SessionControl — value of SessionEvent.control on CONTROL_UPDATED.
     const val CONTROL_AI = 0
     const val CONTROL_USER = 1
@@ -252,6 +260,7 @@ internal object SessionBridge {
     const val EVENT_PEER_DETACHED = 11
     const val EVENT_DISCONNECTED = 12
     const val EVENT_CALL_ERROR = 13
+    const val EVENT_AUDIO_ROUTE_CHANGED = 14
 
     // Error discriminants — value of SessionException.kind.
     const val ERROR_NOT_INITIALIZED = 1

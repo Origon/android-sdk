@@ -241,6 +241,22 @@ class OrigonClient(
         SessionBridge.setMuteAll(handle, muted)
     }
 
+    /**
+     * Override the audio output route (speaker / receiver / Bluetooth).
+     *
+     * Process-global — affects the app's single active voice session, so it
+     * takes no session id. A no-op when no call is active. UI typically wraps
+     * this as a boolean speaker toggle ([AudioOutputRoute.SPEAKER] /
+     * [AudioOutputRoute.AUTOMATIC]).
+     *
+     * May block while the audio output stream is reopened; call it off the main
+     * thread.
+     */
+    fun setAudioOutput(route: AudioOutputRoute) {
+        ensureOpen()
+        SessionBridge.setAudioOutput(handle, route.toBridge())
+    }
+
     // ── Chat ─────────────────────────────────────────────────────────
 
     /**
@@ -499,6 +515,12 @@ class OrigonClient(
                 ClientEvent.CallError(
                     sessionId = sid,
                     message = if (raw.callErrorPresent) raw.callErrorMessage else null,
+                )
+
+            SessionBridge.EVENT_AUDIO_ROUTE_CHANGED ->
+                ClientEvent.AudioRouteChanged(
+                    sessionId = sid,
+                    route = AudioOutputRoute.fromBridge(raw.audioRoute),
                 )
 
             else -> null

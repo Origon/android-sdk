@@ -1,5 +1,6 @@
 package origon.example.android.services
 
+import ai.origon.sdk.AudioOutputRoute
 import ai.origon.sdk.Channel
 import ai.origon.sdk.ClientEvent
 import ai.origon.sdk.DisconnectReason
@@ -34,6 +35,10 @@ class CallService(private val manager: SDKManager) {
     private val _muted = MutableStateFlow(false)
     val muted: StateFlow<Boolean> = _muted.asStateFlow()
 
+    /** Whether call audio is routed to the loudspeaker. Reset per call. */
+    private val _speakerOn = MutableStateFlow(false)
+    val speakerOn: StateFlow<Boolean> = _speakerOn.asStateFlow()
+
     /** Soft errors surfaced via [ClientEvent.CallError]. null = cleared. */
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
@@ -61,6 +66,7 @@ class CallService(private val manager: SDKManager) {
         _phase.value = Phase.Connecting
         _lastError.value = null
         _muted.value = false
+        _speakerOn.value = false
         try {
             // startSession blocks on the FFI runtime (HTTP + QUIC dial) —
             // hop off the main thread.
@@ -88,6 +94,29 @@ class CallService(private val manager: SDKManager) {
     }
 
     /**
+     * Route call audio to the loudspeaker ([value] = true) or back to the
+     * default route ([value] = false). Process-global, so it needs no session
+     * id. Updates [speakerOn] optimistically and applies the route off the main
+     * thread (it can block on an audio stream reopen); reverts on failure.
+     */
+    fun setSpeaker(value: Boolean) {
+        val client = manager.client ?: return
+        _speakerOn.value = value
+        manager.scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    client.setAudioOutput(
+                        if (value) AudioOutputRoute.SPEAKER else AudioOutputRoute.AUTOMATIC
+                    )
+                }
+            } catch (e: SessionException) {
+                _speakerOn.value = !value
+                _lastError.value = e.message ?: "Failed to switch speaker"
+            }
+        }
+    }
+
+    /**
      * User-initiated end. The SDK fires Disconnected(LocalClose) shortly
      * after; we don't wait — flip phase immediately so the UI dismisses.
      */
@@ -108,6 +137,7 @@ class CallService(private val manager: SDKManager) {
         _phase.value = Phase.Idle
         _lastError.value = null
         _muted.value = false
+        _speakerOn.value = false
     }
 
     // MARK: - Event handling
@@ -125,6 +155,11 @@ class CallService(private val manager: SDKManager) {
                 sessionId = null
             }
             is ClientEvent.CallError -> _lastError.value = event.message
+            // SDK is the source of truth for the route: fires for our own
+            // setSpeaker and for OS-driven changes (headset plug), so the
+            // toggle never goes stale.
+            is ClientEvent.AudioRouteChanged ->
+                _speakerOn.value = event.route == AudioOutputRoute.SPEAKER
             else -> Unit
         }
     }

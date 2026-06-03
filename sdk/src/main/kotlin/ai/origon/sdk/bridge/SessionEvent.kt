@@ -26,6 +26,7 @@ package ai.origon.sdk.bridge
  * | `EVENT_PEER_DETACHED`            | `sessionId`, `peerEndpointId`, `peerAlias`                              |
  * | `EVENT_DISCONNECTED`             | `sessionId`, `disconnectReasonKind` (+ server* if SERVER_CLOSED)        |
  * | `EVENT_CALL_ERROR`               | `sessionId`, `callErrorPresent`, `callErrorMessage`                     |
+ * | `EVENT_AUDIO_ROUTE_CHANGED`      | `sessionId`, `audioRoute`                                              |
  */
 internal class SessionEvent {
     @JvmField var kind: Int = 0
@@ -69,4 +70,7 @@ internal class SessionEvent {
 
     /** EVENT_MESSAGE_UPDATED — row lookup id (= provisional `localId` for outbound ack/failure, or `message.id` for server-driven updates). */
     @JvmField var updateId: String? = null
+
+    /** EVENT_AUDIO_ROUTE_CHANGED — now-current route (`AUDIO_OUTPUT_*`: 0 = default, 1 = speaker, 2 = bluetooth). */
+    @JvmField var audioRoute: Int = 0
 }

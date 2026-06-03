@@ -2,11 +2,13 @@ package origon.example.android.ui.call
 
 import android.os.Bundle
 import android.view.View
+import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -27,6 +29,9 @@ class CallFragment : Fragment(R.layout.fragment_call) {
     private var _binding: FragmentCallBinding? = null
     private val binding get() = _binding!!
 
+    /** Active call-duration timer. Tracked so a reconnect can't spawn a second. */
+    private var timerJob: Job? = null
+
     private val main get() = requireActivity() as MainActivity
     private val call get() = main.sdk.call
 
@@ -35,6 +40,9 @@ class CallFragment : Fragment(R.layout.fragment_call) {
 
         binding.btnMute.applyPressScale()
         binding.btnMute.setOnClickListener { call.setMute(!call.muted.value) }
+
+        binding.btnSpeaker.applyPressScale()
+        binding.btnSpeaker.setOnClickListener { call.setSpeaker(!call.speakerOn.value) }
 
         binding.btnEnd.applyPressScale()
         binding.btnEnd.setOnClickListener {
@@ -71,6 +79,22 @@ class CallFragment : Fragment(R.layout.fragment_call) {
                     }
                 }
                 launch {
+                    call.speakerOn.collect { on ->
+                        binding.speakerBg.setBackgroundResource(
+                            if (on) R.drawable.bg_circle_accent else R.drawable.bg_circle_muted
+                        )
+                        binding.speakerIcon.setColorFilter(
+                            ContextCompat.getColor(
+                                requireContext(),
+                                if (on) R.color.white else R.color.origon_text_primary,
+                            )
+                        )
+                        binding.speakerIcon.contentDescription = getString(
+                            if (on) R.string.call_speaker_off else R.string.call_speaker
+                        )
+                    }
+                }
+                launch {
                     call.lastError.collect { error ->
                         if (error != null && call.phase.value is CallService.Phase.Connected) {
                             binding.callError.isVisible = true
@@ -99,7 +123,11 @@ class CallFragment : Fragment(R.layout.fragment_call) {
     }
 
     private fun startTimer() {
-        viewLifecycleOwner.lifecycleScope.launch {
+        // Cancel any existing timer first: phase can become Connected more than
+        // once (a reconnect surfaces as Connected → Reconnecting → Reconnected),
+        // and without this each one would launch another concurrent timer.
+        timerJob?.cancel()
+        timerJob = viewLifecycleOwner.lifecycleScope.launch {
             delay(1000)
             if (call.phase.value !is CallService.Phase.Connected) return@launch
             var seconds = 1

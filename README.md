@@ -65,6 +65,7 @@ while (true) {
     when (val event = client.pollEvent()) {
         is ClientEvent.Connected -> println("connected")
         is ClientEvent.PeerAttached -> println("peer ${event.peerEndpointId}")
+        is ClientEvent.AudioRouteChanged -> speakerOn = event.route == AudioOutputRoute.SPEAKER
         is ClientEvent.Disconnected -> { println("disconnected: ${event.reason}"); break }
         null -> Thread.sleep(50)
         else -> {}
@@ -112,8 +113,18 @@ private fun onCallButtonTapped() {
 ### Voice controls
 
 ```kotlin
+// Mute (per session).
 client.setMute(id = response.sessionId, muted = true)
+
+// Audio output route — process-global, so no session id. Applied via
+// AudioManager (speakerphone / Bluetooth SCO). Resets to AUTOMATIC on each
+// new call.
+client.setAudioOutput(AudioOutputRoute.SPEAKER)     // force the loudspeaker
+client.setAudioOutput(AudioOutputRoute.AUTOMATIC)   // back to the default route (earpiece / wired / Bluetooth)
 ```
+
+A speaker toggle is typically
+`client.setAudioOutput(if (on) AudioOutputRoute.SPEAKER else AudioOutputRoute.AUTOMATIC)`.
 
 ### Multiple sessions
 
@@ -191,6 +202,7 @@ while (true) {
 | `joinSession(input)` | Attach to a previously-obtained `StartSessionResponse`. |
 | `endSession(id)` / `endAllSessions()` | Close a single / every session. |
 | `setMute(id, muted)` / `setMuteAll(muted)` | Voice — absolute mute. |
+| `setAudioOutput(route)` | Voice — override the audio output route (`SPEAKER` / `AUTOMATIC` / `BLUETOOTH`). Process-global. |
 | `sendMessage(id, payload)` | Chat — POST `<sessionUrl>/message`. Returns the server-issued `Message`. Fires `MessageAdded` then `MessageUpdated`. |
 | `notifyTyping(id)` | Chat — register a keystroke; SDK debounces outbound `/typing` POSTs. |
 | `stopTyping(id)` | Chat — force outbound typing state to "off" immediately. |
@@ -210,6 +222,7 @@ while (true) {
 - `MessageStatus` — `SENDING`, `DELIVERED`, `FAILED`.
 - `MessageState` — `STREAMING`, `COMPLETED`.
 - `Platform` — `MOBILE`, `WEB`, `NONE`.
+- `AudioOutputRoute` — `AUTOMATIC` (default route — earpiece / wired / Bluetooth), `SPEAKER` (loudspeaker), `BLUETOOTH`. Argument to `setAudioOutput(route)`.
 - `StartSessionOptions` — channel, optional sessionId, optional `data` (raw JSON).
 - `StartSessionResponse` — sessionId, url, token.
 - `JoinSessionInput` — channel, sessionId, url, token.
@@ -217,7 +230,7 @@ while (true) {
 - `AttachmentRule` / `AttachmentPolicy` — tenant policy for attachments.
 - `ServerConfig` — full `/config` snapshot (start message, capability flags, attachment policy).
 - `DisconnectReason` — sealed class of structured reasons.
-- `ClientEvent` — sealed class: `MessageAdded`, `MessageUpdated`, `Connected`, `Reconnecting`, `Reconnected`, `PeerAttached`, `PeerDetached`, `Disconnected`, `CallError`, `ControlUpdated`, `Typing`, `SessionUpdated`. Every variant carries `sessionId`.
+- `ClientEvent` — sealed class: `MessageAdded`, `MessageUpdated`, `Connected`, `Reconnecting`, `Reconnected`, `PeerAttached`, `PeerDetached`, `Disconnected`, `CallError`, `AudioRouteChanged`, `ControlUpdated`, `Typing`, `SessionUpdated`. Every variant carries `sessionId`. `AudioRouteChanged` carries the now-current `AudioOutputRoute` (drive a speaker toggle from `route == AudioOutputRoute.SPEAKER`); it fires on OS-driven route changes (headset plug/unplug) as well as your own `setAudioOutput`.
 - `Message` — typed transcript line. Carries `id`, `localId`, `role`, `text`, `html`, `userId`, `userName`, `timestamp`, `attachments`, `errorText`, `status`, `state`.
 - `Attachment`, `Contact`, `SessionSummary`, `SessionHistory` — typed shapes returned by `getSessions()` / `getSession(id)`.
 - `SendMessagePayload` — `text`, `html`, `attachments` (input shape for `sendMessage(id, payload)`).
