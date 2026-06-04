@@ -2,4 +2,27 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!--
+      Voice-call audio routing. These merge into the consumer app's manifest.
+
+      MODIFY_AUDIO_SETTINGS (normal, auto-granted): required for setMode /
+      setSpeakerphoneOn / startBluetoothSco / setBluetoothScoOn — the calls the
+      SDK uses to route call audio (incl. to a Bluetooth headset).
+
+      BLUETOOTH (normal, auto-granted, API <= 30 only): required to use a
+      Bluetooth SCO (hands-free) headset for the call mic + earpiece on
+      Android 11 and below. maxSdkVersion=30 — replaced by BLUETOOTH_CONNECT on 31+.
+
+      BLUETOOTH_CONNECT (RUNTIME, API 31+): required for Bluetooth SCO routing on
+      Android 12+. This is a dangerous permission: declaring it here is not
+      enough — the CONSUMER APP must request it at runtime (the SDK cannot grant
+      it). If it is not granted the SDK degrades gracefully and the call uses the
+      built-in mic/earpiece. See the README ("Bluetooth permissions").
+    -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 </manifest>

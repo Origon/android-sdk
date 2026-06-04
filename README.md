@@ -110,6 +110,54 @@ private fun onCallButtonTapped() {
 > open (e.g. `IAudioFlinger: createRecord returned error -1`), followed by
 > the SDK logging `audio device start failed, continuing without audio`.
 
+### Bluetooth permission (for headset calls on Android 12+)
+
+When a Bluetooth (hands-free / HFP) headset is connected, the SDK routes
+the call to it automatically — mic **and** earpiece — matching the native
+phone app. The required permissions are declared in the SDK manifest and
+merge into your app:
+
+| Permission | API | Type | Who grants it |
+| --- | --- | --- | --- |
+| `MODIFY_AUDIO_SETTINGS` | all | normal | auto-granted at install |
+| `BLUETOOTH` (`maxSdkVersion=30`) | ≤ 30 | normal | auto-granted at install |
+| `BLUETOOTH_CONNECT` | 31+ | **runtime** | **your app must request it** |
+
+On **Android 11 and below nothing extra is needed** — `BLUETOOTH` is a
+normal permission and is granted at install.
+
+On **Android 12+ (API 31+)**, `BLUETOOTH_CONNECT` is a runtime permission.
+The SDK declares it but **cannot grant it** — it has no `Activity` to show
+the permission dialog, so **your app must request it at runtime** (before
+or at call start) for Bluetooth headset routing to work:
+
+```kotlin
+// Only needed on Android 12+ (API 31+). Request before starting the call.
+private val requestBt = registerForActivityResult(
+    ActivityResultContracts.RequestPermission()
+) { /* granted or not — the call proceeds either way (see fallback below) */ }
+
+private fun ensureBluetoothPermission() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
+        != PackageManager.PERMISSION_GRANTED
+    ) {
+        requestBt.launch(Manifest.permission.BLUETOOTH_CONNECT)
+    }
+}
+```
+
+**Graceful fallback:** this permission is *not* required for a call to
+succeed. If `BLUETOOTH_CONNECT` is missing (or the headset's SCO link
+otherwise fails to come up), the SDK waits ~4 s for the link, then falls
+back to the built-in mic/earpiece so the call keeps working — you simply
+don't get Bluetooth routing. Requesting it is what lets the headset be
+used.
+
+> Symptom if you skip this on Android 12+: logcat shows
+> `Bluetooth SCO did not connect within 4s; falling back to built-in audio`,
+> and the call uses the phone's mic/earpiece instead of the headset.
+
 ### Voice controls
 
 ```kotlin
