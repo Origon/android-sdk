@@ -39,8 +39,10 @@
             android:textSize="16sp" />
     </LinearLayout>
 
-    <!-- Form — bottom-aligned; adjustResize lifts it above the keyboard. -->
+    <!-- Form — bottom-aligned; window insets lift it above the keyboard
+         (and the navigation bar) since edge-to-edge disables adjustResize. -->
     <LinearLayout
+        android:id="@+id/form"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"

@@ -128,17 +128,27 @@ normal permission and is granted at install.
 
 On **Android 12+ (API 31+)**, `BLUETOOTH_CONNECT` is a runtime permission.
 The SDK declares it but **cannot grant it** — it has no `Activity` to show
-the permission dialog, so **your app must request it at runtime** (before
-or at call start) for Bluetooth headset routing to work:
+the permission dialog, so **your app must request it at runtime** for
+Bluetooth headset routing to work.
+
+Request it **only when a Bluetooth headset is actually connected** — its
+system dialog reads "find, connect to, and determine the relative position
+of nearby devices" (the generic *Nearby devices* group text; the permission
+itself only connects to already-paired devices, no scanning/location), so
+prompting every user for it would be confusing. `AudioManager.getDevices`
+needs no Bluetooth permission, so it's safe to check first:
 
 ```kotlin
-// Only needed on Android 12+ (API 31+). Request before starting the call.
+// Only needed on Android 12+, and only when a BT headset is present.
 private val requestBt = registerForActivityResult(
     ActivityResultContracts.RequestPermission()
 ) { /* granted or not — the call proceeds either way (see fallback below) */ }
 
-private fun ensureBluetoothPermission() {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+private fun maybeRequestBluetooth(am: AudioManager) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val headsetConnected = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        .any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+    if (headsetConnected &&
         ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
         != PackageManager.PERMISSION_GRANTED
     ) {
@@ -146,6 +156,9 @@ private fun ensureBluetoothPermission() {
     }
 }
 ```
+
+See `RootChatFragment.startCall()` in the example app for the full flow
+(mic + conditional Bluetooth) in one place.
 
 **Graceful fallback:** this permission is *not* required for a call to
 succeed. If `BLUETOOTH_CONNECT` is missing (or the headset's SCO link

@@ -9,7 +9,10 @@ import android.content.Context
 import android.view.MotionEvent
 import android.view.View
 import android.view.animation.LinearInterpolator
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
 
 // MARK: - Haptics
 
@@ -62,6 +65,48 @@ fun View.applyPressScale() {
         }
         false // don't consume — let click handling proceed
     }
+}
+
+// MARK: - Window insets
+
+/**
+ * Pads a view by the relevant window insets so its content stays within
+ * the safe area.
+ *
+ * Apps targeting SDK 35 are always edge-to-edge on Android 15: content
+ * draws under the status and navigation bars, and the legacy
+ * `adjustResize` no longer lifts content above the keyboard. These flags
+ * restore the safe-area spacing manually.
+ *
+ * - [top] adds the status-bar inset (e.g. a toolbar).
+ * - [bottom] adds the navigation-bar inset.
+ * - [ime] keeps the view above the keyboard when it's up, falling back to
+ *   the navigation-bar inset otherwise — pair with [bottom] for a
+ *   composer / form.
+ *
+ * The view's original padding is preserved and the insets are added on top.
+ */
+fun View.applyWindowInsets(
+    top: Boolean = false,
+    bottom: Boolean = false,
+    ime: Boolean = false,
+) {
+    val initialTop = paddingTop
+    val initialBottom = paddingBottom
+    ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
+        val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+        val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+        v.updatePadding(
+            top = initialTop + if (top) bars.top else 0,
+            bottom = initialBottom + when {
+                ime -> maxOf(bars.bottom, imeBottom)
+                bottom -> bars.bottom
+                else -> 0
+            },
+        )
+        insets
+    }
+    ViewCompat.requestApplyInsets(this)
 }
 
 // MARK: - Floating toast

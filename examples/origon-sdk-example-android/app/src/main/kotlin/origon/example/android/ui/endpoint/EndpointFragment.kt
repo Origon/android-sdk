@@ -13,6 +13,7 @@ import origon.example.android.R
 import origon.example.android.databinding.FragmentEndpointBinding
 import origon.example.android.ui.common.ToastController
 import origon.example.android.ui.common.applyPressScale
+import origon.example.android.ui.common.applyWindowInsets
 import origon.example.android.util.SdkErrorKinds
 
 /**
@@ -33,6 +34,9 @@ class EndpointFragment : Fragment(R.layout.fragment_endpoint) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         _binding = FragmentEndpointBinding.bind(view)
         toast = ToastController(binding.toast)
+
+        // Keep the form above the keyboard / navigation bar (edge-to-edge).
+        binding.form.applyWindowInsets(bottom = true, ime = true)
 
         binding.endpointInput.setHint(getString(R.string.endpoint_hint))
         binding.endpointInput.onImeGo { handleContinue() }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
+import androidx.core.view.WindowCompat
 import androidx.fragment.app.Fragment
 import origon.example.android.data.StorageKeys
 import origon.example.android.services.SDKManager
@@ -26,6 +27,10 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Draw edge-to-edge on every API level (Android 15 enforces this for
+        // SDK 35 targets anyway). Fragments restore safe-area spacing via
+        // `applyWindowInsets`; the theme keeps the bar icons legible.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         if (savedInstanceState == null) {
             if (currentEndpoint().isNullOrEmpty()) showEndpoint() else showChat()
         }

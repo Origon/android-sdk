@@ -2,7 +2,10 @@ package origon.example.android.ui.chat
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.view.View
@@ -24,6 +27,7 @@ import origon.example.android.services.SDKManager
 import origon.example.android.ui.call.CallFragment
 import origon.example.android.ui.common.ToastController
 import origon.example.android.ui.common.applyPressScale
+import origon.example.android.ui.common.applyWindowInsets
 
 /**
  * Hosts the chat surface: a navigation drawer (sidebar of past sessions)
@@ -59,19 +63,34 @@ class RootChatFragment : Fragment(R.layout.fragment_root_chat) {
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let { enqueueUpload(it) } }
 
-    // RECORD_AUDIO is a runtime ("dangerous") permission — the manifest
-    // declaration is not enough. A voice call's mic capture (the input)
-    // fails without it, so the app must request the grant before starting
-    // a call. This is the consumer's responsibility, not the SDK's.
-    private val requestMic = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) launchCall() else toast.show(getString(R.string.call_mic_required))
+    // A voice call needs runtime ("dangerous") permissions the manifest
+    // declaration alone doesn't grant. Requesting them is the consumer app's
+    // job, not the SDK's (the SDK has no Activity to drive the dialog) — the SDK
+    // only *declares* them, and they merge into this app.
+    //
+    //   - RECORD_AUDIO (all API levels): REQUIRED. Mic capture (the call's
+    //     outgoing audio) is silent without it, so we gate the call on it.
+    //   - BLUETOOTH_CONNECT (Android 12+ / API 31+): OPTIONAL, and only worth
+    //     prompting for when a Bluetooth headset is actually connected (see
+    //     `startCall`) — otherwise we'd show the "Nearby devices" system dialog
+    //     to every user for nothing. The SDK works without it (built-in
+    //     mic/earpiece). Not a runtime permission on API <= 30.
+    private val requestCallPermissions = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        // Gate only on the mic — re-check the live grant since it may have been
+        // granted earlier and not part of this request. A denied (or absent)
+        // BLUETOOTH_CONNECT is fine: the call proceeds on the built-in device.
+        if (micGranted()) launchCall() else toast.show(getString(R.string.call_mic_required))
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         _binding = FragmentRootChatBinding.bind(view)
         toast = ToastController(binding.toast)
+
+        // Keep the toolbar below the status bar and the composer above the
+        // navigation bar / keyboard (edge-to-edge).
+        binding.chatContent.applyWindowInsets(top = true, bottom = true, ime = true)
 
         setupLists()
         setupToolbar()
@@ -291,15 +310,41 @@ class RootChatFragment : Fragment(R.layout.fragment_root_chat) {
 
     private fun startCall() {
         hideKeyboard()
-        // Gate the call on the mic permission. Without RECORD_AUDIO granted,
-        // the SDK's input stream fails to open and the call has no
-        // outgoing audio.
-        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
+        // Build the permission set to request: the mic if not yet granted, and
+        // BLUETOOTH_CONNECT only when a Bluetooth headset is actually connected
+        // (Android 12+) — so users without one never see the "Nearby devices"
+        // dialog. Then launch as long as the mic ends up granted.
+        val needed = buildList {
+            if (!micGranted()) add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                bluetoothHeadsetConnected() &&
+                ContextCompat.checkSelfPermission(
+                    requireContext(), Manifest.permission.BLUETOOTH_CONNECT
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                add(Manifest.permission.BLUETOOTH_CONNECT)
+            }
+        }
+        if (needed.isEmpty()) {
             launchCall()
         } else {
-            requestMic.launch(Manifest.permission.RECORD_AUDIO)
+            requestCallPermissions.launch(needed.toTypedArray())
+        }
+    }
+
+    private fun micGranted(): Boolean =
+        ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Whether a Bluetooth (hands-free / SCO) headset is currently connected.
+     * Uses `AudioManager.getDevices`, which needs no Bluetooth permission, so
+     * it's safe to call *before* deciding whether to request BLUETOOTH_CONNECT.
+     */
+    private fun bluetoothHeadsetConnected(): Boolean {
+        val am = requireContext().getSystemService(AudioManager::class.java) ?: return false
+        return am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
         }
     }
 
