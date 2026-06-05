@@ -100,6 +100,47 @@ emulator_serial_for_avd() {
     return 1
 }
 
+# PID of $PACKAGE on device $1, or empty. Avoids `pidof <pkg>`, which on
+# Android 6 (API 23) returns EVERY pid instead of the app's. Parses `ps`
+# instead, matching the package as the process name (last column → pid in
+# col 2). `ps -A` works on API 24+; on API 23 it prints only a header, so
+# fall back to bare `ps`.
+app_pid() {
+    local dev="$1" pid cmd
+    for cmd in 'ps -A' 'ps'; do
+        pid=$("$ADB" -s "$dev" shell "$cmd" 2>/dev/null | tr -d '\r' \
+            | awk -v pkg="$PACKAGE" '$NF==pkg {print $2; exit}')
+        [[ -n "$pid" ]] && { echo "$pid"; return 0; }
+    done
+    return 1
+}
+
+# Stream logs for $PACKAGE on device $1, across API levels. Retries briefly so
+# a just-launched app has time to spawn.
+stream_logcat() {
+    local dev="$1" pid sdk _
+    sdk=$("$ADB" -s "$dev" shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')
+    for _ in $(seq 1 10); do
+        pid=$(app_pid "$dev" || true)
+        [[ -n "$pid" ]] && break
+        sleep 1
+    done
+    if [[ -z "$pid" ]]; then
+        echo "== $PACKAGE not running; showing crashes + app tags (Ctrl+C to stop) ==" >&2
+        "$ADB" -s "$dev" logcat -s "AndroidRuntime:E" "session:V" "moq:V"
+        return
+    fi
+    echo "== Streaming logcat for $PACKAGE (pid $pid) — Ctrl+C to stop ==" >&2
+    if [[ "${sdk:-0}" -ge 24 ]]; then
+        # `logcat --pid` exists from API 24 onward.
+        "$ADB" -s "$dev" logcat --pid="$pid" '*:V'
+    else
+        # API 23 logcat has no --pid: filter the pid column of threadtime output.
+        "$ADB" -s "$dev" logcat -v threadtime '*:V' \
+            | grep --line-buffered -E "^[0-9]{2}-[0-9]{2} +[0-9:.]+ +$pid +"
+    fi
+}
+
 # ── Boot emulator (optional) ───────────────────────────────────────────
 # When requested, ensures the target AVD is running and pins the rest of the
 # flow to it via DEVICE_OVERRIDE.
@@ -156,9 +197,8 @@ resolve_device() { [[ -n "$DEVICE_OVERRIDE" ]] && echo "$DEVICE_OVERRIDE" || pic
 if $LOGCAT_ONLY; then
     DEVICE=$(resolve_device)
     [[ -z "$DEVICE" ]] && { echo "ERROR: no ADB device connected." >&2; exit 1; }
-    PID=$("$ADB" -s "$DEVICE" shell pidof "$PACKAGE" 2>/dev/null || true)
-    if [[ -n "$PID" ]]; then exec "$ADB" -s "$DEVICE" logcat --pid="$PID" '*:V'
-    else exec "$ADB" -s "$DEVICE" logcat -s "AndroidRuntime:E" "session:V" "moq:V"; fi
+    stream_logcat "$DEVICE"
+    exit 0
 fi
 
 # ── Build ──────────────────────────────────────────────────────────────
@@ -178,10 +218,7 @@ echo "== Installing on $DEVICE =="
 
 echo "== Launching $PACKAGE =="
 "$ADB" -s "$DEVICE" shell am force-stop "$PACKAGE" 2>/dev/null || true
+"$ADB" -s "$DEVICE" logcat -c 2>/dev/null || true   # fresh buffer from launch
 "$ADB" -s "$DEVICE" shell am start -n "$PACKAGE/$ACTIVITY"
 
-echo "== Streaming logcat (Ctrl+C to stop) =="
-sleep 1
-PID=$("$ADB" -s "$DEVICE" shell pidof "$PACKAGE" 2>/dev/null || true)
-if [[ -n "$PID" ]]; then "$ADB" -s "$DEVICE" logcat --pid="$PID" '*:V'
-else "$ADB" -s "$DEVICE" logcat -s "AndroidRuntime:E" "session:V" "moq:V"; fi
+stream_logcat "$DEVICE"
