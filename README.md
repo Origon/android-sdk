@@ -3,6 +3,19 @@
 Android SDK for the Origon platform — voice calling over MOQ, plus
 session management.
 
+## About
+
+The Origon SDK for Android lets you embed Origon directly in your app:
+**audio calls** (with automatic Bluetooth-headset routing), **chat** (with
+typing indicators, attachments, and message delivery status), **push
+notifications**, and **session history**.
+
+A basic chat + voice integration takes around 15 minutes; allow a little
+longer if you also wire up push notifications or Bluetooth routing. The SDK
+authenticates your app by its **Package Name**, which you register once in
+the Origon Connect web app (see [Prerequisites](#prerequisites)). At runtime
+all you pass is your Origon **endpoint**.
+
 ## Requirements
 
 - Android API 23+ (Android 6.0 Marshmallow)
@@ -10,6 +23,28 @@ session management.
   The native audio backend uses [Oboe](https://github.com/google/oboe),
   which selects AAudio on API 27+ and OpenSL ES on API 23-26 at runtime.
   No special integration is required on any supported API level.
+
+## Prerequisites
+
+Register your app in the Origon Connect web app before the SDK can connect.
+The SDK authenticates each app by the **Package Name** it reports (sent as
+`X-Bundle-Id`), so that Package Name has to be on your tenant's allow-list
+first.
+
+1. Sign in to **Origon Connect** at <https://origon.ai/connect>.
+2. Go to **Settings → Integrations → Mobile → Setup Mobile SDK**.
+3. Fill in your app details — **Company Name**, **logo**, and the
+   **routing** rules for your flow (where calls and chats are sent).
+4. Open the **Deployment** tab and add your app's **Package Name** (your
+   `applicationId`, e.g. `com.domain.yourapp`) to the **Bundle IDs** field.
+   It accepts multiple entries, so you can register several apps (e.g.
+   staging and production) against the same config. To run and test the
+   [sample app](#sample-app), add its package name `origon.example.android`
+   here as well.
+5. **Save** the config.
+
+Your Package Name is the `applicationId` in your app module's
+`build.gradle.kts`; it must match exactly what the app reports at runtime.
 
 ## Installation
 
@@ -37,6 +72,19 @@ dependencies {
 }
 ```
 
+## Sample app
+
+You'll find the Origon SDK for Android on GitHub
+[here](https://github.com/Origon/android-sdk). The repo also includes a
+runnable sample app — a minimal Android app that integrates chat and voice
+calls — under
+[`examples/origon-sdk-example-android`](https://github.com/Origon/android-sdk/tree/main/examples/origon-sdk-example-android).
+See its [README](https://github.com/Origon/android-sdk/blob/main/examples/origon-sdk-example-android/README.md)
+for build and run instructions (Android Studio or a no-IDE `run.sh` path),
+plus a guide to which files to read first when wiring the SDK into your own
+app. `RootChatFragment.startCall()` there shows the full mic + Bluetooth
+permission flow in one place.
+
 ## Quick Start
 
 ```kotlin
@@ -53,10 +101,7 @@ OrigonClient.initLogging()
 // stable identity.
 val client = OrigonClient(
     context,
-    ClientConfig(
-        endpoint = "https://api.origon.ai",
-        token = "your-auth-token",
-    ),
+    ClientConfig(endpoint = "https://api.origon.ai"),
 )
 
 // Start a voice session.
@@ -136,7 +181,7 @@ Bluetooth headset routing to work.
 
 Request it **only when a Bluetooth headset is actually connected** — its
 system dialog reads "find, connect to, and determine the relative position
-of nearby devices" (the generic *Nearby devices* group text; the permission
+of nearby devices" (the generic _Nearby devices_ group text; the permission
 itself only connects to already-paired devices, no scanning/location), so
 prompting every user for it would be confusing. `AudioManager.getDevices`
 needs no Bluetooth permission, so it's safe to check first:
@@ -163,7 +208,7 @@ private fun maybeRequestBluetooth(am: AudioManager) {
 See `RootChatFragment.startCall()` in the example app for the full flow
 (mic + conditional Bluetooth) in one place.
 
-**Graceful fallback:** this permission is *not* required for a call to
+**Graceful fallback:** this permission is _not_ required for a call to
 succeed. If `BLUETOOTH_CONNECT` is missing (or the headset's SCO link
 otherwise fails to come up), the SDK waits ~4 s for the link, then falls
 back to the built-in mic/earpiece so the call keeps working — you simply
@@ -253,6 +298,37 @@ while (true) {
 }
 ```
 
+### Attachments
+
+Chat only. Upload a file, then attach the returned `Attachment` to your
+next message. `uploadAttachment` is a `suspend` function (call it from a
+coroutine) with overloads for a filesystem path, a `content://` `Uri`, or
+in-memory `ByteArray`:
+
+```kotlin
+val attachment = client.uploadAttachment(
+    sessionId = sessionId,
+    uri = pickedUri,
+    fileName = "photo.jpg",
+) { progress ->
+    // progress.percent is null when the total size is unknown
+    updateProgressBar(progress.percent)
+}
+
+client.sendMessage(
+    id = sessionId,
+    payload = SendMessagePayload(attachments = listOf(attachment)),
+)
+
+// Cancel an in-flight upload (pass the uploadId) or delete a completed
+// one (pass attachment.id) — the SDK works out which.
+client.deleteAttachment(sessionId = sessionId, attachmentId = attachment.id)
+```
+
+Uploads are prechecked against the tenant's `attachmentPolicy` (type and
+size); a disallowed file throws `SessionException` before any bytes are
+sent.
+
 ### Push notifications
 
 Register this device's FCM token so the backend can deliver push
@@ -303,7 +379,7 @@ OrigonClient.unregisterForPushNotifications()
 ### OrigonClient
 
 | Method | Description |
-|---|---|
+| --- | --- |
 | `OrigonClient(config)` | Create a new client. Throws `SessionException` on connect failure. |
 | `close()` | Release the native handle. |
 | `pollEvent()` | Non-blocking poll. Returns `null` when idle. |
@@ -315,18 +391,20 @@ OrigonClient.unregisterForPushNotifications()
 | `sendMessage(id, payload)` | Chat — POST `<sessionUrl>/message`. Returns the server-issued `Message`. Fires `MessageAdded` then `MessageUpdated`. |
 | `notifyTyping(id)` | Chat — register a keystroke; SDK debounces outbound `/typing` POSTs. |
 | `stopTyping(id)` | Chat — force outbound typing state to "off" immediately. |
+| `uploadAttachment(sessionId, …)` | Chat — `suspend`; upload a file (path / `Uri` / `ByteArray` overloads) and return the server-issued `Attachment`. Reports progress via `onProgress`. |
+| `deleteAttachment(sessionId, attachmentId)` | Chat — `suspend`; cancel an in-flight upload (pass the `uploadId`) or delete a completed attachment (pass `attachment.id`). |
 | `activeSessions()` | Snapshot of every active session. |
 | `getSessions()` | `GET /sessions` — list prior sessions for the configured `userId`. |
 | `getSession(id)` | `GET /session/<id>` — transcript for one session. |
 | `setAttributes(attributes)` | Replace session-level attributes injected as `data.attributes` on `startSession`. |
 | `OrigonClient.registerForPushNotifications(token)` | Companion. Register an FCM token (buffered until init; latest wins). |
 | `OrigonClient.unregisterForPushNotifications()` | Companion. Remove this device's push registration (e.g. on logout). |
-| `startMessage` / `isChatEnabled` / `isCallEnabled` / `multipleChannels` / `attachmentPolicy` | Cached `/config` getters. |
+| `startMessage` / `isChatEnabled` / `isCallEnabled` / `multipleChannels` / `attachmentPolicy` / `serverConfig` | Cached `/config` getters. |
 | `OrigonClient.initLogging(filter)` | Install Rust-side `tracing` subscriber. |
 
 ### Types
 
-- `ClientConfig` — endpoint, token, optional userId, platform, attributes (`JsonObject?`). `userId` defaults to the device identifier (`Settings.Secure.ANDROID_ID`) when omitted. The application id is resolved automatically from `context.packageName` (passed to `OrigonClient`) and sent as `X-Bundle-Id` on every HTTPS call.
+- `ClientConfig` — endpoint, optional `token`, optional `userId`, platform, attributes (`JsonObject?`). The app is authenticated by its **package name** (`applicationId`), resolved automatically from `context.packageName` (passed to `OrigonClient`) and sent as `X-Bundle-Id` on every HTTPS call (register it first — see [Prerequisites](#prerequisites)). `token` is an optional auth token. `userId` defaults to the device identifier (`Settings.Secure.ANDROID_ID`) when omitted.
 - `Channel` — `CHAT`, `VOICE`.
 - `SessionControl` — `AI`, `USER`.
 - `MessageRole` — `AI`, `EXTERNAL`, `USER`, `SYSTEM`.
@@ -343,12 +421,10 @@ OrigonClient.unregisterForPushNotifications()
 - `DisconnectReason` — sealed class of structured reasons.
 - `ClientEvent` — sealed class: `MessageAdded`, `MessageUpdated`, `Connected`, `Reconnecting`, `Reconnected`, `PeerAttached`, `PeerDetached`, `Disconnected`, `CallError`, `AudioRouteChanged`, `ControlUpdated`, `Typing`, `SessionUpdated`. Every variant carries `sessionId`. `AudioRouteChanged` carries the now-current `AudioOutputRoute` (drive a speaker toggle from `route == AudioOutputRoute.SPEAKER`); it fires on OS-driven route changes (headset plug/unplug) as well as your own `setAudioOutput`.
 - `Message` — typed transcript line. Carries `id`, `localId`, `role`, `text`, `html`, `userId`, `userName`, `timestamp`, `attachments`, `errorText`, `status`, `state`.
-- `Attachment`, `Contact`, `SessionSummary`, `SessionHistory` — typed shapes returned by `getSessions()` / `getSession(id)`.
+- `Attachment` — uploaded-media descriptor: `id`, `name`, `contentType`, `url`, and an optional client-side `localUrl` preview (kept on the local `Message`, stripped from the wire). Returned by `uploadAttachment(...)`, carried on `Message.attachments`, and passed back into `SendMessagePayload.attachments`.
+- `UploadProgress` — `bytesUploaded`, optional `totalBytes`, optional `percent` (both `null` when the transport reports no content length). Passed to the `uploadAttachment` `onProgress` callback.
+- `Contact`, `SessionSummary`, `SessionHistory` — typed shapes returned by `getSessions()` / `getSession(id)`.
 - `SendMessagePayload` — `text`, `html`, `attachments` (input shape for `sendMessage(id, payload)`).
-
-Attachment uploads (`upload_attachment` etc.) are not yet wired
-through the SDK; the `attachments` field on `SendMessagePayload` is
-reserved for that future surface.
 
 ## License
 
