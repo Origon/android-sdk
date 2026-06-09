@@ -34,14 +34,18 @@ tenant's allow-list first.
 1. Sign in to **Origon Connect** at <https://origon.ai/connect>.
 2. Go to **Settings → Integrations → Mobile → Setup Mobile SDK**.
 3. Fill in your app details — **Company Name**, **logo**, and the
-   **routing** rules for your flow (where calls and chats are sent).
-4. Open the **Deployment** tab and add your app's **Package Name** (your
+   **routing** rules for your flow (where calls and chats are sent). Press
+   **Next**.
+4. In the **Deployment** tab, add your app's **Package Name** (your
    `applicationId`, e.g. `com.domain.yourapp`) to the **Bundle IDs** field.
    It accepts multiple entries, so you can register several apps (e.g.
    staging and production) against the same config. To run and test the
    [sample app](#sample-app), add its package name `origon.example.android`
    here as well.
-5. **Save** the config.
+5. Copy the **endpoint** shown in the **Deployment** tab and pass it as the
+   `endpoint` in `ClientConfig` when you initialize `OrigonClient` (see
+   [Quick Start](#quick-start)).
+6. **Save** the config.
 
 Your Package Name is the `applicationId` in your app module's
 `build.gradle.kts`; it must match exactly what the app reports at runtime.
@@ -404,27 +408,29 @@ OrigonClient.unregisterForPushNotifications()
 
 ### Types
 
-- `ClientConfig` — endpoint, optional `token`, optional `userId`, platform, attributes (`JsonObject?`). The app is authenticated by its **package name** (`applicationId`), resolved automatically from `context.packageName` (passed to `OrigonClient`) and sent as `X-Bundle-Id` on every HTTPS call (register it first — see [Prerequisites](#prerequisites)). `token` is an optional auth token. `userId` defaults to the device identifier (`Settings.Secure.ANDROID_ID`) when omitted.
-- `Channel` — `CHAT`, `VOICE`.
-- `SessionControl` — `AI`, `USER`.
-- `MessageRole` — `AI`, `EXTERNAL`, `USER`, `SYSTEM`.
-- `MessageStatus` — `SENDING`, `DELIVERED`, `FAILED`.
-- `MessageState` — `STREAMING`, `COMPLETED`.
-- `Platform` — `MOBILE`, `WEB`, `NONE`.
-- `AudioOutputRoute` — `AUTOMATIC` (default route — earpiece / wired / Bluetooth), `SPEAKER` (loudspeaker), `BLUETOOTH`. Argument to `setAudioOutput(route)`.
-- `StartSessionOptions` — channel, optional sessionId, optional `data` (raw JSON).
-- `StartSessionResponse` — sessionId, url, token.
-- `JoinSessionInput` — channel, sessionId, url, token.
-- `ActiveSession` — sessionId, channel.
-- `AttachmentRule` / `AttachmentPolicy` — tenant policy for attachments.
-- `ServerConfig` — full `/config` snapshot (start message, capability flags, attachment policy).
-- `DisconnectReason` — sealed class of structured reasons.
-- `ClientEvent` — sealed class: `MessageAdded`, `MessageUpdated`, `Connected`, `Reconnecting`, `Reconnected`, `PeerAttached`, `PeerDetached`, `Disconnected`, `CallError`, `AudioRouteChanged`, `ControlUpdated`, `Typing`, `SessionUpdated`. Every variant carries `sessionId`. `AudioRouteChanged` carries the now-current `AudioOutputRoute` (drive a speaker toggle from `route == AudioOutputRoute.SPEAKER`); it fires on OS-driven route changes (headset plug/unplug) as well as your own `setAudioOutput`.
-- `Message` — typed transcript line. Carries `id`, `localId`, `role`, `text`, `html`, `userId`, `userName`, `timestamp`, `attachments`, `errorText`, `status`, `state`.
-- `Attachment` — uploaded-media descriptor: `id`, `name`, `contentType`, `url`, and an optional client-side `localUrl` preview (kept on the local `Message`, stripped from the wire). Returned by `uploadAttachment(...)`, carried on `Message.attachments`, and passed back into `SendMessagePayload.attachments`.
-- `UploadProgress` — `bytesUploaded`, optional `totalBytes`, optional `percent` (both `null` when the transport reports no content length). Passed to the `uploadAttachment` `onProgress` callback.
-- `Contact`, `SessionSummary`, `SessionHistory` — typed shapes returned by `getSessions()` / `getSession(id)`.
-- `SendMessagePayload` — `text`, `html`, `attachments` (input shape for `sendMessage(id, payload)`).
+| Type | Description |
+| --- | --- |
+| `ClientConfig` | endpoint, optional `token`, optional `userId`, platform, attributes (`JsonObject?`). The app is authenticated by its **package name** (`applicationId`), resolved automatically from `context.packageName` (passed to `OrigonClient`) and sent as `X-Bundle-Id` on every HTTPS call (register it first — see [Prerequisites](#prerequisites)). `token` is an optional auth token. `userId` defaults to the device identifier (`Settings.Secure.ANDROID_ID`) when omitted. |
+| `Channel` | `CHAT`, `VOICE`. |
+| `SessionControl` | `AI`, `USER`. |
+| `MessageRole` | `AI`, `EXTERNAL`, `USER`, `SYSTEM`. |
+| `MessageStatus` | `SENDING`, `DELIVERED`, `FAILED`. |
+| `MessageState` | `STREAMING`, `COMPLETED`. |
+| `Platform` | `MOBILE`, `WEB`, `NONE`. |
+| `AudioOutputRoute` | `AUTOMATIC` (default route — earpiece / wired / Bluetooth), `SPEAKER` (loudspeaker), `BLUETOOTH`. Argument to `setAudioOutput(route)`. |
+| `StartSessionOptions` | channel, optional sessionId, optional `data` (raw JSON). |
+| `StartSessionResponse` | sessionId, url, token. |
+| `JoinSessionInput` | channel, sessionId, url, token. |
+| `ActiveSession` | sessionId, channel. |
+| `AttachmentRule` / `AttachmentPolicy` | tenant policy for attachments. |
+| `ServerConfig` | full `/config` snapshot (start message, capability flags, attachment policy). |
+| `DisconnectReason` | sealed class of structured reasons. |
+| `ClientEvent` | sealed class: `MessageAdded`, `MessageUpdated`, `Connected`, `Reconnecting`, `Reconnected`, `PeerAttached`, `PeerDetached`, `Disconnected`, `CallError`, `AudioRouteChanged`, `ControlUpdated`, `Typing`, `SessionUpdated`. Every variant carries `sessionId`. `AudioRouteChanged` carries the now-current `AudioOutputRoute` (drive a speaker toggle from `route == AudioOutputRoute.SPEAKER`); it fires on OS-driven route changes (headset plug/unplug) as well as your own `setAudioOutput`. |
+| `Message` | typed transcript line. Carries `id`, `localId`, `role`, `text`, `html`, `userId`, `userName`, `timestamp`, `attachments`, `errorText`, `status`, `state`. |
+| `Attachment` | uploaded-media descriptor: `id`, `name`, `contentType`, `url`, and an optional client-side `localUrl` preview (kept on the local `Message`, stripped from the wire). Returned by `uploadAttachment(...)`, carried on `Message.attachments`, and passed back into `SendMessagePayload.attachments`. |
+| `UploadProgress` | `bytesUploaded`, optional `totalBytes`, optional `percent` (both `null` when the transport reports no content length). Passed to the `uploadAttachment` `onProgress` callback. |
+| `Contact`, `SessionSummary`, `SessionHistory` | typed shapes returned by `getSessions()` / `getSession(id)`. |
+| `SendMessagePayload` | `text`, `html`, `attachments` (input shape for `sendMessage(id, payload)`). |
 
 ## License
 
