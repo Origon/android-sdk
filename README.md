@@ -27,9 +27,9 @@ all you pass is your Origon **endpoint**.
 ## Prerequisites
 
 Register your app in the Origon Connect web app before the SDK can connect.
-The SDK authenticates each app by the **Package Name** it reports (sent as
-`X-Bundle-Id`), so that Package Name has to be on your tenant's allow-list
-first.
+Your account owner or admin has access to it. The SDK authenticates each app
+by the **Package Name** it reports, so that Package Name has to be on your
+tenant's allow-list first.
 
 1. Sign in to **Origon Connect** at <https://origon.ai/connect>.
 2. Go to **Settings → Integrations → Mobile → Setup Mobile SDK**.
