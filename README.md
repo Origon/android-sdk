@@ -105,7 +105,7 @@ OrigonClient.initLogging()
 // stable identity.
 val client = OrigonClient(
     context,
-    ClientConfig(endpoint = "https://api.origon.ai"),
+    ClientConfig(endpoint = "https://origon.ai/chat/api/<id>"),
 )
 
 // Start a voice session.
