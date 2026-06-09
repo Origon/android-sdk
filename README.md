@@ -48,6 +48,9 @@ OrigonClient.initLogging()
 // Create the client. `context` is an Android Context (usually
 // `applicationContext`); the SDK uses it to read `packageName` and
 // send it as `X-Bundle-Id` on every HTTPS call.
+// `userId` is optional — when omitted, the SDK falls back to the device
+// identifier (Settings.Secure.ANDROID_ID) so anonymous users still get a
+// stable identity.
 val client = OrigonClient(
     context,
     ClientConfig(
@@ -250,6 +253,51 @@ while (true) {
 }
 ```
 
+### Push notifications
+
+Register this device's FCM token so the backend can deliver push
+notifications. The host app owns token acquisition — set up
+[Firebase Cloud Messaging](https://firebase.google.com/docs/cloud-messaging/android/client)
+(its `google-services.json`, the `com.google.gms.google-services` plugin,
+and the `com.google.firebase:firebase-messaging` dependency), then
+forward the token from your `FirebaseMessagingService`:
+
+```kotlin
+import ai.origon.sdk.OrigonClient
+import com.google.firebase.messaging.FirebaseMessagingService
+
+class AppMessagingService : FirebaseMessagingService() {
+    override fun onNewToken(token: String) {
+        OrigonClient.registerForPushNotifications(token)
+    }
+}
+```
+
+Declare the service in your `AndroidManifest.xml`:
+
+```xml
+<service
+    android:name=".AppMessagingService"
+    android:exported="false">
+    <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT" />
+    </intent-filter>
+</service>
+```
+
+`registerForPushNotifications(token)` is a **companion-object** method
+and is safe to call **before** the client is initialized — the token is
+buffered and sent automatically once `OrigonClient` is created. It is
+also safe to call repeatedly (e.g. from `onNewToken`); the latest token
+wins. The call returns immediately and runs the network request in the
+background; failures are logged, not thrown. FCM has no sandbox/
+production split, so no environment is sent.
+
+```kotlin
+// On logout:
+OrigonClient.unregisterForPushNotifications()
+```
+
 ## API Reference
 
 ### OrigonClient
@@ -271,12 +319,14 @@ while (true) {
 | `getSessions()` | `GET /sessions` — list prior sessions for the configured `userId`. |
 | `getSession(id)` | `GET /session/<id>` — transcript for one session. |
 | `setAttributes(attributes)` | Replace session-level attributes injected as `data.attributes` on `startSession`. |
+| `OrigonClient.registerForPushNotifications(token)` | Companion. Register an FCM token (buffered until init; latest wins). |
+| `OrigonClient.unregisterForPushNotifications()` | Companion. Remove this device's push registration (e.g. on logout). |
 | `startMessage` / `isChatEnabled` / `isCallEnabled` / `multipleChannels` / `attachmentPolicy` | Cached `/config` getters. |
 | `OrigonClient.initLogging(filter)` | Install Rust-side `tracing` subscriber. |
 
 ### Types
 
-- `ClientConfig` — endpoint, token, userId, platform, attributes (`JsonObject?`). The application id is resolved automatically from `context.packageName` (passed to `OrigonClient`) and sent as `X-Bundle-Id` on every HTTPS call.
+- `ClientConfig` — endpoint, token, optional userId, platform, attributes (`JsonObject?`). `userId` defaults to the device identifier (`Settings.Secure.ANDROID_ID`) when omitted. The application id is resolved automatically from `context.packageName` (passed to `OrigonClient`) and sent as `X-Bundle-Id` on every HTTPS call.
 - `Channel` — `CHAT`, `VOICE`.
 - `SessionControl` — `AI`, `USER`.
 - `MessageRole` — `AI`, `EXTERNAL`, `USER`, `SYSTEM`.

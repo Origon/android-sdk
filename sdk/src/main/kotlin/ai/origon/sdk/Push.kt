@@ -1,0 +1,97 @@
+package ai.origon.sdk
+
+import android.util.Log
+import java.lang.ref.WeakReference
+import java.util.concurrent.Executors
+
+/**
+ * Process-wide coordinator for push registration.
+ *
+ * Push registration is a device/app-level concern that can race
+ * [OrigonClient] creation (FCM may deliver a token via
+ * `onNewToken` before the app has built its client), so the state lives
+ * here rather than on a client instance. A single-thread executor runs
+ * the blocking JNI calls, keeping registration ordered and off the main
+ * thread; the small amount of mutable state is guarded by [lock].
+ */
+internal object PushRegistrar {
+    private const val TAG = "OrigonSDK"
+
+    private val lock = Any()
+    private val executor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "origon-push").apply { isDaemon = true }
+    }
+
+    /** Most recently created client, weakly held so we never keep it alive. */
+    private var client: WeakReference<OrigonClient>? = null
+    /** Latest token awaiting (re-)send, retained so a client created after the
+     *  token arrives can still register. */
+    private var bufferedToken: String? = null
+
+    // ── Client lifecycle (called by OrigonClient) ────────────────────
+
+    /** Record the active client and flush any token buffered before init. */
+    fun attach(client: OrigonClient) {
+        val token: String?
+        synchronized(lock) {
+            this.client = WeakReference(client)
+            token = bufferedToken
+        }
+        if (token != null) {
+            sendRegister(client, token)
+        }
+    }
+
+    /** Drop the active-client reference when that client is closed. */
+    fun detach(client: OrigonClient) {
+        synchronized(lock) {
+            if (this.client?.get() === client) {
+                this.client = null
+            }
+        }
+    }
+
+    // ── Registration (called by the public API) ──────────────────────
+
+    fun register(token: String) {
+        val target: OrigonClient?
+        synchronized(lock) {
+            bufferedToken = token
+            target = client?.get()
+        }
+        if (target == null) {
+            Log.d(TAG, "no active client; buffering push token until init")
+            return
+        }
+        sendRegister(target, token)
+    }
+
+    fun unregister() {
+        val target: OrigonClient?
+        synchronized(lock) {
+            bufferedToken = null
+            target = client?.get()
+        }
+        if (target == null) {
+            Log.d(TAG, "no active client; nothing to unregister")
+            return
+        }
+        executor.execute {
+            try {
+                target.unregisterPush()
+            } catch (e: Throwable) {
+                Log.e(TAG, "unregisterForPushNotifications failed", e)
+            }
+        }
+    }
+
+    private fun sendRegister(client: OrigonClient, token: String) {
+        executor.execute {
+            try {
+                client.registerPush(token = token, provider = "fcm", environment = null)
+            } catch (e: Throwable) {
+                Log.e(TAG, "registerForPushNotifications failed", e)
+            }
+        }
+    }
+}

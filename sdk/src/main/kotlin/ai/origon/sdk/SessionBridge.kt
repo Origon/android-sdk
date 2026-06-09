@@ -61,6 +61,7 @@ internal object SessionBridge {
         bundleId: String?,
         token: String?,
         userId: String?,
+        deviceId: String?,
         platform: Int,
         attributesJson: String?,
     ): Long
@@ -121,6 +122,23 @@ internal object SessionBridge {
 
     @JvmStatic external fun endSession(handle: Long, id: String)
     @JvmStatic external fun endAllSessions(handle: Long)
+
+    // ── Push notifications ───────────────────────────────────────────
+
+    /**
+     * `POST /push/register`. [token] is the FCM token; [provider] is
+     * `"fcm"`; [environment] is unused for FCM and passed as null.
+     * No-ops when the client was created without a device id.
+     */
+    @JvmStatic external fun registerPush(
+        handle: Long,
+        token: String,
+        provider: String,
+        environment: String?,
+    )
+
+    /** `POST /push/unregister`. No-ops when there is no device id. */
+    @JvmStatic external fun unregisterPush(handle: Long)
 
     // ── Voice controls ───────────────────────────────────────────────
 

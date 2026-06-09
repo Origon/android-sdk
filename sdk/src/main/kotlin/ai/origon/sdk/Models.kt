@@ -127,6 +127,12 @@ enum class AudioOutputRoute {
 data class ClientConfig(
     val endpoint: String,
     val token: String? = null,
+    /**
+     * Optional. When omitted, the SDK falls back to the device
+     * identifier (`Settings.Secure.ANDROID_ID`) so anonymous users still
+     * get a stable identity. Initialization fails only if both this and
+     * the device identifier are unavailable.
+     */
     val userId: String? = null,
     val platform: Platform = Platform.MOBILE,
     /**

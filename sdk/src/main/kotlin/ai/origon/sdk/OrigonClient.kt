@@ -25,11 +25,27 @@ class OrigonClient(
 
     private val appContext: android.content.Context = context.applicationContext
 
+    /**
+     * Stable per-install device identifier (`Settings.Secure.ANDROID_ID`).
+     * Sent as `deviceId` on push register/unregister, and used as the
+     * `userId` fallback when the consumer omits one.
+     */
+    private val deviceId: String? = resolveDeviceId(appContext)
+
     private val handle: Long = SessionBridge.initialize(
         endpoint = config.endpoint,
         bundleId = appContext.packageName,
         token = config.token,
-        userId = config.userId,
+        // `userId` is optional at the SDK surface but required by the
+        // core. Fall back to the device id so anonymous users still get
+        // a stable identity; fail fast if neither is available.
+        userId = config.userId ?: deviceId ?: throw SessionException(
+            kind = SessionBridge.ERROR_MISSING_FIELD,
+            statusCode = 0,
+            code = "user_id",
+            message = "userId was not provided and no device identifier is available",
+        ),
+        deviceId = deviceId,
         platform = config.platform.toBridge(),
         attributesJson = config.attributes?.let { JSON.encodeToString(JsonObject.serializer(), it) },
     )
@@ -46,10 +62,16 @@ class OrigonClient(
                 message = "session bridge returned null handle",
             )
         }
+        // Become the active client for push registration and flush any
+        // token buffered before this client existed. See Push.kt.
+        PushRegistrar.attach(this)
     }
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
+            // Detach first so the registrar won't start a new
+            // registration against a handle we're about to destroy.
+            PushRegistrar.detach(this)
             SessionBridge.destroy(handle)
         }
     }
@@ -218,6 +240,23 @@ class OrigonClient(
     fun endAllSessions() {
         ensureOpen()
         SessionBridge.endAllSessions(handle)
+    }
+
+    // ── Push notifications ───────────────────────────────────────────
+    // The public, buffering entry points are the companion-object
+    // `registerForPushNotifications` / `unregisterForPushNotifications`.
+    // These instance methods are the blocking JNI calls they dispatch to.
+
+    /** Blocking JNI call — invoked off the main thread by [PushRegistrar]. */
+    internal fun registerPush(token: String, provider: String, environment: String?) {
+        ensureOpen()
+        SessionBridge.registerPush(handle, token, provider, environment)
+    }
+
+    /** Blocking JNI call — invoked off the main thread by [PushRegistrar]. */
+    internal fun unregisterPush() {
+        ensureOpen()
+        SessionBridge.unregisterPush(handle)
     }
 
     /** Snapshot of every active session. */
@@ -553,6 +592,49 @@ class OrigonClient(
         fun initLogging(filter: String? = null) {
             SessionBridge.initLogging(filter)
         }
+
+        /**
+         * Register this device's FCM token for push notifications.
+         *
+         * Safe to call before an [OrigonClient] exists — the token is
+         * buffered and sent once a client is created — and repeatedly
+         * (e.g. from `FirebaseMessagingService.onNewToken`), where the
+         * latest token wins. Returns immediately and performs the network
+         * request on a background thread; failures are logged, not thrown
+         * (FCM delivers tokens through a fire-and-forget callback, so
+         * there is no caller to surface an error to).
+         */
+        fun registerForPushNotifications(token: String) {
+            PushRegistrar.register(token)
+        }
+
+        /**
+         * Remove this device's push registration for the current user.
+         *
+         * Clears any buffered token so a later client won't re-register.
+         * Returns immediately; failures are logged. Typically called on
+         * logout.
+         */
+        fun unregisterForPushNotifications() {
+            PushRegistrar.unregister()
+        }
+
+        /**
+         * Resolve a stable per-install device id from
+         * `Settings.Secure.ANDROID_ID`. Returns null on the rare devices
+         * that report a blank id, which disables push registration and,
+         * when no `userId` is supplied, surfaces as an init error.
+         */
+        @android.annotation.SuppressLint("HardwareIds")
+        private fun resolveDeviceId(context: android.content.Context): String? =
+            try {
+                android.provider.Settings.Secure.getString(
+                    context.contentResolver,
+                    android.provider.Settings.Secure.ANDROID_ID,
+                )?.takeIf { it.isNotEmpty() }
+            } catch (_: Throwable) {
+                null
+            }
 
         private val JSON = Json { ignoreUnknownKeys = true }
     }
