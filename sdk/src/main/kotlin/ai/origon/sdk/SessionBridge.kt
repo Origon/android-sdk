@@ -62,7 +62,6 @@ internal object SessionBridge {
         token: String?,
         userId: String?,
         deviceId: String?,
-        platform: Int,
         attributesJson: String?,
     ): Long
 
@@ -246,11 +245,6 @@ internal object SessionBridge {
     @JvmStatic external fun pollEvent(handle: Long): SessionEvent?
 
     // ── Discriminant constants (mirrored from Rust) ──────────────────
-
-    // Platform — see SessionBridge.initialize(platform: Int).
-    const val PLATFORM_NONE = 0
-    const val PLATFORM_MOBILE = 1
-    const val PLATFORM_WEB = 2
 
     // Channel — see SessionBridge.startSession(channel: Int).
     const val CHANNEL_CHAT = 0

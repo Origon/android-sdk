@@ -410,13 +410,12 @@ OrigonClient.unregisterForPushNotifications()
 
 | Type | Description |
 | --- | --- |
-| `ClientConfig` | endpoint, optional `token`, optional `userId`, platform, attributes (`JsonObject?`). The app is authenticated by its **package name** (`applicationId`), resolved automatically from `context.packageName` (passed to `OrigonClient`) and sent as `X-Bundle-Id` on every HTTPS call (register it first — see [Prerequisites](#prerequisites)). `token` is an optional auth token. `userId` defaults to the device identifier (`Settings.Secure.ANDROID_ID`) when omitted. |
+| `ClientConfig` | endpoint, optional `token`, optional `userId`, attributes (`JsonObject?`). The app is authenticated by its **package name** (`applicationId`), resolved automatically from `context.packageName` (passed to `OrigonClient`) and sent as `X-Bundle-Id` on every HTTPS call (register it first — see [Prerequisites](#prerequisites)). `token` is an optional auth token. `userId` defaults to the device identifier (`Settings.Secure.ANDROID_ID`) when omitted. |
 | `Channel` | `CHAT`, `VOICE`. |
 | `SessionControl` | `AI`, `USER`. |
 | `MessageRole` | `AI`, `EXTERNAL`, `USER`, `SYSTEM`. |
 | `MessageStatus` | `SENDING`, `DELIVERED`, `FAILED`. |
 | `MessageState` | `STREAMING`, `COMPLETED`. |
-| `Platform` | `MOBILE`, `WEB`, `NONE`. |
 | `AudioOutputRoute` | `AUTOMATIC` (default route — earpiece / wired / Bluetooth), `SPEAKER` (loudspeaker), `BLUETOOTH`. Argument to `setAudioOutput(route)`. |
 | `StartSessionOptions` | channel, optional sessionId, optional `data` (raw JSON). |
 | `StartSessionResponse` | sessionId, url, token. |

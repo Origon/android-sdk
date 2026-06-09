@@ -46,7 +46,6 @@ class OrigonClient(
             message = "userId was not provided and no device identifier is available",
         ),
         deviceId = deviceId,
-        platform = config.platform.toBridge(),
         attributesJson = config.attributes?.let { JSON.encodeToString(JsonObject.serializer(), it) },
     )
     private val closed = AtomicBoolean(false)

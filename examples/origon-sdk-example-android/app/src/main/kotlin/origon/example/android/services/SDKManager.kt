@@ -4,7 +4,6 @@ import android.content.Context
 import ai.origon.sdk.ClientConfig
 import ai.origon.sdk.ClientEvent
 import ai.origon.sdk.OrigonClient
-import ai.origon.sdk.Platform
 import ai.origon.sdk.SessionSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,7 +67,6 @@ class SDKManager(private val appContext: Context) {
             endpoint = endpoint,
             token = token,
             userId = userId,
-            platform = Platform.MOBILE,
         )
         // OrigonClient(...) blocks on the FFI runtime during the /config
         // round trip — keep it off the main thread.

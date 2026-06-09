@@ -80,18 +80,6 @@ enum class MessageState {
     @SerialName("completed") COMPLETED,
 }
 
-enum class Platform {
-    NONE,
-    MOBILE,
-    WEB;
-
-    internal fun toBridge(): Int = when (this) {
-        NONE -> SessionBridge.PLATFORM_NONE
-        MOBILE -> SessionBridge.PLATFORM_MOBILE
-        WEB -> SessionBridge.PLATFORM_WEB
-    }
-}
-
 /**
  * Audio output route override for a voice call — the "speakerphone" concept,
  * distinct from device selection. Android applies it via `AudioManager`
@@ -134,7 +122,6 @@ data class ClientConfig(
      * the device identifier are unavailable.
      */
     val userId: String? = null,
-    val platform: Platform = Platform.MOBILE,
     /**
      * Initial session-level attributes. Injected as `data.attributes`
      * on `POST /session/start`. Encoded to a JSON string via
