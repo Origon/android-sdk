@@ -72,7 +72,7 @@ In your app's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("ai.origon:sdk:0.1.0-alpha.1")
+    implementation("ai.origon:sdk:0.1.0")
 }
 ```
 
