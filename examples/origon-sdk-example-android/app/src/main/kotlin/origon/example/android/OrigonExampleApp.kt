@@ -15,9 +15,9 @@ class OrigonExampleApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        if (BuildConfig.DEBUG) {
-            OrigonClient.initLogging()
-        }
+        // if (BuildConfig.DEBUG) {
+        //     OrigonClient.initLogging()
+        // }
         sdk = SDKManager(applicationContext)
     }
 }
