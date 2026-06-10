@@ -13,7 +13,7 @@ android {
         minSdk = 23
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0-alpha.1"
+        versionName = "0.1.0"
     }
 
     buildFeatures {
@@ -47,7 +47,7 @@ android {
 }
 
 dependencies {
-    implementation("ai.origon:sdk:0.1.0-alpha.1")
+    implementation("ai.origon:sdk:0.1.0-alpha.2")
     // ClientConfig exposes a kotlinx JsonObject in its public API but the
     // SDK declares the dependency as `implementation`, so consumers must
     // add it explicitly to satisfy the compiler.
