@@ -576,6 +576,11 @@ class OrigonClient(
         return try {
             JSON.decodeFromString(Message.serializer(), json)
         } catch (e: Throwable) {
+            // Drop the event but leave a breadcrumb: a silent drop here
+            // makes messages vanish with no diagnostics if the SDK and
+            // server schemas drift. Log only the exception — never the
+            // raw JSON, which contains message content.
+            android.util.Log.w("OrigonSDK", "decodeMessage: dropping event, JSON parse failed: ${e.message}")
             null
         }
     }
