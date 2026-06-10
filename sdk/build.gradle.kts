@@ -59,10 +59,6 @@ mavenPublishing {
     coordinates(
         groupId = "ai.origon",
         artifactId = "sdk",
-        // Real releases pass -PsdkVersion=X.Y.Z via release-android.sh.
-        // `0.0.0-LOCAL` is the fallback for local dev — works with
-        // `./gradlew :sdk:publishToMavenLocal` so example apps can resolve
-        // an unreleased SDK from ~/.m2/repository.
         version = providers.gradleProperty("sdkVersion").getOrElse("0.0.0-LOCAL"),
     )
 
