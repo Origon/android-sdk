@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="origon_accent">#EA580C</color>
+    <!-- Accent — white in dark mode; foreground on top is near-black. -->
+    <color name="origon_accent">#FFFFFF</color>
+    <color name="origon_accent_foreground">#111111</color>
 
     <!-- Dark-mode palette. screenBackground is #111111 per the iOS app. -->
     <color name="origon_screen_background">#111111</color>
@@ -9,6 +11,8 @@
     <color name="origon_text_secondary">#99EBEBF5</color>
     <color name="origon_text_tertiary">#4DEBEBF5</color>
     <color name="origon_remote_bubble">#2C2C2E</color>
+    <!-- Self-user message bubble: white @ 6%. -->
+    <color name="origon_self_bubble">#0FFFFFFF</color>
     <color name="origon_border">#38383A</color>
     <color name="origon_error">#FF453A</color>
     <!-- Toast inverts in dark mode (white bg, dark text). -->

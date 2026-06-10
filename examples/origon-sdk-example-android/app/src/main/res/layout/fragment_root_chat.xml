@@ -36,6 +36,9 @@
                     android:src="@drawable/ic_history"
                     app:tint="@color/origon_text_primary" />
 
+                <!-- Only offered once the conversation has content; on an empty
+                     session it would just restart the same empty screen.
+                     Visibility is driven from RootChatFragment. -->
                 <ImageButton
                     android:id="@+id/btn_new_session"
                     android:layout_width="40dp"
@@ -44,6 +47,7 @@
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/chat_new_session"
                     android:src="@drawable/ic_plus"
+                    android:visibility="gone"
                     app:tint="@color/origon_text_primary" />
             </FrameLayout>
 
@@ -114,7 +118,7 @@
                         android:layout_height="40dp"
                         android:background="?attr/selectableItemBackgroundBorderless"
                         android:contentDescription="@string/attach_files"
-                        android:src="@drawable/ic_paperclip"
+                        android:src="@drawable/ic_attachment"
                         app:tint="@color/origon_text_secondary" />
 
                     <EditText
@@ -149,14 +153,14 @@
                             android:layout_height="20dp"
                             android:layout_gravity="center"
                             android:src="@drawable/ic_voice"
-                            app:tint="@color/white" />
+                            app:tint="@color/origon_accent_foreground" />
 
                         <ProgressBar
                             android:id="@+id/send_progress"
                             android:layout_width="20dp"
                             android:layout_height="20dp"
                             android:layout_gravity="center"
-                            android:indeterminateTint="@color/white"
+                            android:indeterminateTint="@color/origon_accent_foreground"
                             android:visibility="gone" />
                     </FrameLayout>
                 </LinearLayout>
@@ -242,7 +246,7 @@
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
                 android:text="@string/retry"
-                android:textColor="@color/white"
+                android:textColor="@color/origon_accent_foreground"
                 android:textSize="15sp"
                 android:textStyle="bold" />
         </FrameLayout>

@@ -2,7 +2,7 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.OrigonSDKExample" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/origon_accent</item>
-        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorOnPrimary">@color/origon_accent_foreground</item>
         <item name="colorSecondary">@color/origon_accent</item>
         <item name="android:windowBackground">@color/origon_screen_background</item>
         <item name="android:statusBarColor">@color/origon_screen_background</item>

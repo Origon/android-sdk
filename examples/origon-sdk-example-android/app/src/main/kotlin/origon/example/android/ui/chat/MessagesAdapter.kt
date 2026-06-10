@@ -63,7 +63,7 @@ class MessagesAdapter(
                 bubble.setTextColor(
                     ContextCompat.getColor(
                         ctx,
-                        if (isSelf) R.color.white else R.color.origon_text_primary,
+                        if (isSelf) R.color.origon_text_primary else R.color.origon_accent_foreground,
                     )
                 )
             } else {
@@ -76,7 +76,7 @@ class MessagesAdapter(
             for (att in message.attachments) {
                 val chip = TextView(ctx).apply {
                     text = att.name.ifEmpty { "Attachment" }
-                    setTextColor(ContextCompat.getColor(ctx, if (isSelf) R.color.white else R.color.origon_text_primary))
+                    setTextColor(ContextCompat.getColor(ctx, if (isSelf) R.color.origon_text_primary else R.color.origon_accent_foreground))
                     textSize = 14f
                     setBackgroundResource(if (isSelf) R.drawable.bg_bubble_self else R.drawable.bg_bubble_remote)
                     setPadding(28, 18, 28, 18)

@@ -86,7 +86,7 @@ class CallFragment : Fragment(R.layout.fragment_call) {
                         binding.speakerIcon.setColorFilter(
                             ContextCompat.getColor(
                                 requireContext(),
-                                if (on) R.color.white else R.color.origon_text_primary,
+                                if (on) R.color.origon_accent_foreground else R.color.origon_text_primary,
                             )
                         )
                         binding.speakerIcon.contentDescription = getString(

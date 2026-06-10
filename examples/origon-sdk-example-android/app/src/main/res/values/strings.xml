@@ -12,7 +12,7 @@
 
     <!-- Chat -->
     <string name="chat_empty_greeting">How can I help you?</string>
-    <string name="chat_input_hint">Type a message</string>
+    <string name="chat_input_hint">Message</string>
     <string name="chat_session_history">Session history</string>
     <string name="chat_new_session">New session</string>
     <string name="chat_disconnected">Chat disconnected</string>

@@ -174,6 +174,9 @@ class RootChatFragment : Fragment(R.layout.fragment_root_chat) {
                         val empty = messages.isEmpty() && !chat.isTyping.value
                         binding.emptyState.isVisible = empty
                         binding.messagesList.isVisible = !empty
+                        // Only offer "new session" once the conversation has
+                        // content — on an empty session it's a no-op.
+                        binding.btnNewSession.isVisible = messages.isNotEmpty()
                         if (messages.isNotEmpty()) {
                             binding.messagesList.scrollToPosition(messages.size - 1)
                         }
