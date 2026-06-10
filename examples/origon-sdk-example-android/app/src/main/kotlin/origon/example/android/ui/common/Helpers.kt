@@ -8,6 +8,7 @@ import android.os.VibratorManager
 import android.content.Context
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.animation.LinearInterpolator
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -119,9 +120,16 @@ class ToastController(private val toastView: View) {
     private val handler = toastView.handler ?: android.os.Handler(toastView.context.mainLooper)
     private var dismiss: Runnable? = null
 
+    // The bottom margin declared in the layout — the resting offset above the
+    // window bottom. The keyboard / navigation-bar inset is added on top of it
+    // each time the toast is shown.
+    private val baseBottomMargin =
+        (toastView.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
+
     fun show(message: String) {
         (toastView as? android.widget.TextView)?.text = message
         dismiss?.let { handler.removeCallbacks(it) }
+        liftAboveKeyboard()
         toastView.isVisible = true
         toastView.alpha = 0f
         toastView.translationY = 24f
@@ -130,5 +138,20 @@ class ToastController(private val toastView: View) {
             toastView.animate().alpha(0f).translationY(24f).setDuration(250)
                 .withEndAction { toastView.isVisible = false }.start()
         }.also { handler.postDelayed(it, 3000) }
+    }
+
+    // Edge-to-edge apps don't resize when the keyboard opens, so a
+    // bottom-anchored toast would otherwise sit *behind* it (e.g. an endpoint
+    // error toast that fires while the URL field is focused). Lift it by the
+    // keyboard inset — or the navigation-bar inset when the keyboard is down —
+    // via its bottom margin (not padding, which would stretch the pill).
+    private fun liftAboveKeyboard() {
+        val insets = ViewCompat.getRootWindowInsets(toastView) ?: return
+        val navBottom = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+        val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+        (toastView.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+            lp.bottomMargin = baseBottomMargin + maxOf(navBottom, imeBottom)
+            toastView.layoutParams = lp
+        }
     }
 }
