@@ -1,20 +1,25 @@
 # Origon Android SDK
 
-Android SDK for the Origon platform — voice calling over MOQ, plus
-session management.
+Android SDK for the Origon platform.
 
 ## About
 
-The Origon SDK for Android lets you embed Origon directly in your app:
-**audio calls** (with automatic Bluetooth-headset routing), **chat** (with
-typing indicators, attachments, and message delivery status), **push
-notifications**, and **session history**.
+The Origon SDK for Android lets you embed Origon directly in your Android
+app: **audio calls**, **chat**, and **session history**.
 
 A basic chat + voice integration takes around 15 minutes; allow a little
-longer if you also wire up push notifications or Bluetooth routing. The SDK
+longer if you also wire up push notifications. The SDK
 authenticates your app by its **Package Name**, which you register once in
 the Origon Connect web app (see [Prerequisites](#prerequisites)). At runtime
 all you pass is your Origon **endpoint**.
+
+## Features
+
+- **Audio calls** — low-latency voice, with automatic Bluetooth device
+  routing.
+- **Chat** — messaging with typing indicators and attachments.
+- **Push notifications** — wake your app for incoming calls and messages.
+- **Session history** — retrieve past sessions and their messages.
 
 ## Requirements
 
