@@ -20,3 +20,11 @@
 
 # Native shared libraries are build artifacts — only .gitkeep is tracked
 *.so
+
+# Origon workspace agent files — internal team/agent memory, kept LOCAL ONLY.
+# This is a PUBLIC repo: these must never be published. (See ws/CLAUDE.md.)
+/CLAUDE.md
+/CONTRACT.md
+/RULES.md
+/TODO.md
+/LOG.md
